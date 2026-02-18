@@ -19,7 +19,9 @@ export default function registerLabelTools(server: McpServer, imapService: ImapS
   server.tool(
     'list_labels',
     'List available labels for an email account. ' +
-      'Auto-detects the label system: ProtonMail folder-labels, Gmail X-GM-LABELS, or IMAP keywords.',
+      'Auto-detects the label system: ProtonMail folder-labels, Gmail X-GM-LABELS, or IMAP keywords. ' +
+      'ProtonMail note: labels are represented as IMAP folders under the Labels/ prefix. ' +
+      'Use list_emails with mailbox="Labels/<name>" to find emails tagged with a ProtonMail label.',
     {
       account: z.string().describe('Account name from list_accounts'),
     },
@@ -62,8 +64,9 @@ export default function registerLabelTools(server: McpServer, imapService: ImapS
   // ---------------------------------------------------------------------------
   server.tool(
     'add_label',
-    'Add a label to an email. For ProtonMail, this copies the email to the label folder. ' +
-      'For Gmail and standard IMAP, this sets a keyword flag.',
+    'Add a label to an email. ' +
+      'For ProtonMail, this copies the email into the corresponding Labels/<name> folder. ' +
+      'For Gmail and standard IMAP, this sets a keyword flag on the message.',
     {
       account: z.string().describe('Account name from list_accounts'),
       emailId: z.string().describe('Email ID (UID) from list_emails'),

@@ -20,6 +20,7 @@ export default function registerWatcherTools(
     'get_watcher_status',
     'Get the status of IMAP IDLE watcher connections and recent activity.',
     {},
+    { readOnlyHint: true, destructiveHint: false },
     async () => {
       const status = watcherService.getStatus();
 
@@ -58,6 +59,7 @@ export default function registerWatcherTools(
     'list_presets',
     'List all available AI triage presets with their descriptions and suggested labels.',
     {},
+    { readOnlyHint: true, destructiveHint: false },
     async () => {
       const presets = listAllPresets();
       const activePreset = hooksConfig?.preset ?? 'priority-focus';
@@ -90,6 +92,7 @@ export default function registerWatcherTools(
     'get_hooks_config',
     'Get the current AI hooks configuration including preset, rules, and custom instructions.',
     {},
+    { readOnlyHint: true, destructiveHint: false },
     async () => {
       if (!hooksConfig) {
         return {

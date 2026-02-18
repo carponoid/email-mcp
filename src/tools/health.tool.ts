@@ -21,6 +21,7 @@ export default function registerHealthTools(
     {
       account: z.string().optional().describe('Account name (checks all accounts if omitted)'),
     },
+    { readOnlyHint: true, destructiveHint: false },
     async ({ account }) => {
       const names = account ? [account] : connections.getAccountNames();
 

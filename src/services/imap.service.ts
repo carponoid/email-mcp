@@ -284,6 +284,8 @@ export default class ImapService {
       subject?: string;
       seen?: boolean;
       flagged?: boolean;
+      hasAttachment?: boolean;
+      answered?: boolean;
     } = {},
   ): Promise<PaginatedResult<EmailMeta>> {
     const client = await this.connections.getImapClient(accountName);
@@ -301,10 +303,24 @@ export default class ImapService {
       if (options.subject) search.subject = options.subject;
       if (options.seen !== undefined) search.seen = options.seen;
       if (options.flagged !== undefined) search.flagged = options.flagged;
+      if (options.answered !== undefined) search.answered = options.answered;
 
       // Search for matching UIDs
       const searchResult = await client.search(search, { uid: true });
-      const uids: number[] = Array.isArray(searchResult) ? searchResult : [];
+      let uids: number[] = Array.isArray(searchResult) ? searchResult : [];
+
+      // Post-filter for hasAttachment (IMAP has no native attachment search)
+      if (options.hasAttachment !== undefined && uids.length > 0) {
+        const filteredUids: number[] = [];
+        // eslint-disable-next-line no-restricted-syntax
+        for await (const msg of client.fetch(uids.join(','), { uid: true, bodyStructure: true }, { uid: true })) {
+          const raw = msg as unknown as Record<string, unknown>;
+          if (options.hasAttachment === hasAttachments(raw.bodyStructure)) {
+            filteredUids.push(raw.uid as number);
+          }
+        }
+        uids = filteredUids;
+      }
 
       if (uids.length === 0) {
         return {
@@ -392,6 +408,54 @@ export default class ImapService {
       }
 
       return await messageToEmail(msg as unknown as Record<string, unknown>, client, uid);
+    } finally {
+      lock.release();
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Get email flags (lightweight — no body fetch, no \Seen change)
+  // -------------------------------------------------------------------------
+
+  async getEmailFlags(
+    accountName: string,
+    emailId: string,
+    mailbox = 'INBOX',
+  ): Promise<{ seen: boolean; flagged: boolean; answered: boolean; labels: string[]; subject: string; from: string; date: string }> {
+    const client = await this.connections.getImapClient(accountName);
+    const uid = parseInt(emailId, 10);
+
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const msg = await client.fetchOne(
+        String(uid),
+        { uid: true, envelope: true, flags: true },
+        { uid: true },
+      );
+
+      if (!msg) {
+        throw new Error(`Email ${emailId} not found in ${mailbox}`);
+      }
+
+      const raw = msg as unknown as Record<string, unknown>;
+      const flags = new Set((raw.flags ?? []) as string[]);
+      const labels = [...flags].filter((f) => !f.startsWith('\\'));
+      const envelope = (raw.envelope ?? {}) as Record<string, unknown>;
+      const fromEntry = (envelope.from as Record<string, string>[] | undefined)?.[0];
+      let from = '';
+      if (fromEntry) {
+        from = fromEntry.name ? `${fromEntry.name} <${fromEntry.address}>` : (fromEntry.address ?? '');
+      }
+
+      return {
+        seen: flags.has('\\Seen'),
+        flagged: flags.has('\\Flagged'),
+        answered: flags.has('\\Answered'),
+        labels,
+        subject: (envelope.subject as string) ?? '(no subject)',
+        from,
+        date: envelope.date ? new Date(envelope.date as string).toISOString() : '',
+      };
     } finally {
       lock.release();
     }

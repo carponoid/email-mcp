@@ -32,6 +32,7 @@ export default function registerSchedulerTools(
       html: z.boolean().default(false).describe('Send as HTML (default: false)'),
       in_reply_to: z.string().optional().describe('Message-ID to reply to'),
     },
+    { readOnlyHint: false, destructiveHint: false },
     async (params) => {
       const scheduled = await schedulerService.schedule(params.account, {
         to: params.to,
@@ -78,6 +79,7 @@ export default function registerSchedulerTools(
         .default('pending')
         .describe('Filter by status (default: pending)'),
     },
+    { readOnlyHint: true, destructiveHint: false },
     async ({ account, status }) => {
       const emails = await schedulerService.list({
         account,
@@ -117,6 +119,7 @@ export default function registerSchedulerTools(
     {
       schedule_id: z.string().describe('Schedule ID to cancel'),
     },
+    { readOnlyHint: false, destructiveHint: true },
     async ({ schedule_id: scheduleId }) => {
       const result = await schedulerService.cancel(scheduleId);
 

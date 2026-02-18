@@ -21,6 +21,7 @@ export default function registerAnalyticsTools(server: McpServer, imapService: I
         .describe('Time period: day, week, or month'),
       mailbox: z.string().default('INBOX').describe('Mailbox path (default: INBOX)'),
     },
+    { readOnlyHint: true, destructiveHint: false },
     async ({ account, period, mailbox }) => {
       const stats = await imapService.getEmailStats(account, mailbox, period);
 

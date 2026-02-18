@@ -23,6 +23,7 @@ export default function registerCalendarTools(
       email_id: z.string().describe('Email UID'),
       mailbox: z.string().default('INBOX').describe('Mailbox path (default: INBOX)'),
     },
+    { readOnlyHint: true, destructiveHint: false },
     async ({ account, email_id: emailId, mailbox }) => {
       // Get email for subject
       const email = await imapService.getEmail(account, emailId, mailbox);
