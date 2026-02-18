@@ -246,7 +246,11 @@ export default class RemindersService {
     return this.platform === 'darwin';
   }
 
-  async checkPermissions(): Promise<{ granted: boolean; platform: string; instructions: string[] }> {
+  async checkPermissions(): Promise<{
+    granted: boolean;
+    platform: string;
+    instructions: string[];
+  }> {
     if (this.platform !== 'darwin') {
       return {
         granted: false,

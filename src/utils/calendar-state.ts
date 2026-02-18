@@ -68,9 +68,7 @@ export async function markCalendarProcessed(
 }
 
 /** Returns all processed entries (for inspection/debugging). */
-export async function listCalendarProcessed(): Promise<
-  { key: string; entry: ProcessedEntry }[]
-> {
+export async function listCalendarProcessed(): Promise<{ key: string; entry: ProcessedEntry }[]> {
   const state = await readState();
   return Object.entries(state.processedEmails).map(([key, entry]) => ({ key, entry }));
 }

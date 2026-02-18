@@ -31,7 +31,10 @@ const DIAL_IN_PATTERNS = [
 ];
 
 function cleanPhone(raw: string): string {
-  return raw.replace(/[^\d+\s()-]/g, '').trim().replace(/\s{2,}/g, ' ');
+  return raw
+    .replace(/[^\d+\s()-]/g, '')
+    .trim()
+    .replace(/\s{2,}/g, ' ');
 }
 
 function cleanId(raw: string): string {
@@ -74,7 +77,6 @@ export function extractConferenceDetails(text: string): ConferenceDetails | unde
   else if (/jitsi/i.test(text)) details.provider = 'Jitsi';
   else if (/bluejeans\.com/i.test(text)) details.provider = 'BlueJeans';
 
-  const hasData =
-    details.dialIn ?? details.meetingId ?? details.passcode ?? details.provider;
+  const hasData = details.dialIn ?? details.meetingId ?? details.passcode ?? details.provider;
   return hasData ? details : undefined;
 }

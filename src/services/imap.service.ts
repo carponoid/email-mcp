@@ -1207,9 +1207,8 @@ export default class ImapService {
         { uid: true },
       );
       if (!msg) return [];
-      attachmentMetas = extractAttachments(msg.bodyStructure).filter(
-        (a) => a.size <= maxSizeBytes && !a.mimeType.includes('calendar') && !a.filename.toLowerCase().endsWith('.ics'),
-      );
+      // biome-ignore format: line too long; eslint implicit-arrow-linebreak prevents multi-line implicit return
+      attachmentMetas = extractAttachments(msg.bodyStructure).filter((a) => a.size <= maxSizeBytes && !a.mimeType.includes('calendar') && !a.filename.toLowerCase().endsWith('.ics'));
     } finally {
       lock.release();
     }
@@ -1242,9 +1241,10 @@ export default class ImapService {
       }),
     );
 
+    type FulfilledValue = (typeof results)[0] extends PromiseFulfilledResult<infer T> ? T : never;
     return results
       .filter((r) => r.status === 'fulfilled')
-      .map((r) => (r as PromiseFulfilledResult<(typeof results)[0] extends PromiseFulfilledResult<infer T> ? T : never>).value);
+      .map((r) => (r as PromiseFulfilledResult<FulfilledValue>).value);
   }
 
   /**

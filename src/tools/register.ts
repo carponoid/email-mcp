@@ -61,7 +61,13 @@ export default function registerAllTools(
   registerContactsTools(server, imapService);
   registerThreadTools(server, imapService);
   registerTemplateReadTools(server, templateService);
-  registerCalendarTools(server, imapService, calendarService, localCalendarService, remindersService);
+  registerCalendarTools(
+    server,
+    imapService,
+    calendarService,
+    localCalendarService,
+    remindersService,
+  );
   registerAnalyticsTools(server, imapService);
   registerHealthTools(server, connections, imapService);
   registerLocateTools(server, imapService);

@@ -507,11 +507,7 @@ export default class LocalCalendarService {
 
     // Duplicate detection (macOS only, can opt out)
     if (this.platform === 'darwin' && opts.skipDuplicateCheck !== true) {
-      const existing = await findExistingEventMacOS(
-        event.title,
-        event.start,
-        event.icsUid,
-      );
+      const existing = await findExistingEventMacOS(event.title, event.start, event.icsUid);
       if (existing.found) {
         return {
           status: 'duplicate',

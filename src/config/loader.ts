@@ -200,9 +200,7 @@ function normalizeHookRule(raw: {
       markRead: typeof raw.actions.mark_read === 'boolean' ? raw.actions.mark_read : undefined,
       alert: typeof raw.actions.alert === 'boolean' ? raw.actions.alert : undefined,
       addToCalendar:
-        typeof raw.actions.add_to_calendar === 'boolean'
-          ? raw.actions.add_to_calendar
-          : undefined,
+        typeof raw.actions.add_to_calendar === 'boolean' ? raw.actions.add_to_calendar : undefined,
     },
   };
 }

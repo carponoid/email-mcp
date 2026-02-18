@@ -551,9 +551,7 @@ export default class HooksService {
       }
 
       const notes = buildCalendarNotes({
-        emailFrom: full.from.name
-          ? `${full.from.name} <${full.from.address}>`
-          : full.from.address,
+        emailFrom: full.from.name ? `${full.from.name} <${full.from.address}>` : full.from.address,
         emailSubject: full.subject,
         emailDate: new Date(full.date).toLocaleString(),
         meetingUrl: meetingUrl?.url,
@@ -626,8 +624,7 @@ export default class HooksService {
         : undefined,
       flag: typeof obj.flag === 'boolean' ? obj.flag : undefined,
       action: typeof obj.action === 'string' ? obj.action.slice(0, 200) : undefined,
-      addToCalendar:
-        typeof obj.add_to_calendar === 'boolean' ? obj.add_to_calendar : undefined,
+      addToCalendar: typeof obj.add_to_calendar === 'boolean' ? obj.add_to_calendar : undefined,
     };
   }
 }

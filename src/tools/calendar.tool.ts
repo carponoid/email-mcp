@@ -77,7 +77,11 @@ export default function registerCalendarTools(
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify({ email_subject: email.subject, events, count: events.length }, null, 2),
+            text: JSON.stringify(
+              { email_subject: email.subject, events, count: events.length },
+              null,
+              2,
+            ),
           },
         ],
       };
@@ -301,13 +305,17 @@ export default function registerCalendarTools(
       ];
       if (!calResult.granted && calResult.instructions.length > 0) {
         lines.push('', 'Setup instructions:');
-        calResult.instructions.forEach((line, i) => lines.push(`  ${i === 0 ? '' : `${i}. `}${line}`));
+        calResult.instructions.forEach((line, i) => {
+          lines.push(`  ${i === 0 ? '' : `${i}. `}${line}`);
+        });
       }
       lines.push('', '--- Reminders.app ---');
       lines.push(`Access granted: ${remResult.granted ? '✅ Yes' : '❌ No'}`);
       if (!remResult.granted && remResult.instructions.length > 0) {
         lines.push('', 'Setup instructions:');
-        remResult.instructions.forEach((line, i) => lines.push(`  ${i === 0 ? '' : `${i}. `}${line}`));
+        remResult.instructions.forEach((line, i) => {
+          lines.push(`  ${i === 0 ? '' : `${i}. `}${line}`);
+        });
       }
       return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
     },
@@ -360,7 +368,10 @@ export default function registerCalendarTools(
       email_id: z.string().describe('Email ID from list_emails_metadata'),
       mailbox: z.string().default('INBOX').describe('Mailbox containing the email'),
       title: z.string().optional().describe('Reminder title (defaults to email subject)'),
-      notes: z.string().optional().describe('Reminder body/notes (defaults to auto-built from email)'),
+      notes: z
+        .string()
+        .optional()
+        .describe('Reminder body/notes (defaults to auto-built from email)'),
       due_date: z
         .string()
         .optional()
@@ -369,17 +380,24 @@ export default function registerCalendarTools(
         .enum(['none', 'low', 'medium', 'high'])
         .default('none')
         .describe('Reminder priority'),
-      list_name: z
-        .string()
-        .optional()
-        .describe('Reminders list name (default list if omitted)'),
+      list_name: z.string().optional().describe('Reminders list name (default list if omitted)'),
       confirm: z
         .boolean()
         .default(true)
         .describe('Show native confirmation dialog before adding (default: true)'),
     },
     { readOnlyHint: false, destructiveHint: false },
-    async ({ account, email_id: emailId, mailbox, title, notes, due_date, priority, list_name, confirm }) => {
+    async ({
+      account,
+      email_id: emailId,
+      mailbox,
+      title,
+      notes,
+      due_date,
+      priority,
+      list_name,
+      confirm,
+    }) => {
       const email = await imapService.getEmail(account, emailId, mailbox);
       const bodyText = email.bodyText ?? '';
       const bodyHtml = email.bodyHtml ?? '';
@@ -491,9 +509,7 @@ export default function registerCalendarTools(
       );
       const alreadyProcessed = await isCalendarProcessed(account, emailId);
       const processedList = alreadyProcessed ? await listCalendarProcessed() : [];
-      const processedEntry = processedList.find(
-        ({ key }) => key.includes(emailId),
-      );
+      const processedEntry = processedList.find(({ key }) => key.includes(emailId));
 
       let recommendation: string;
       if (detectedEvent && detectedReminder) {

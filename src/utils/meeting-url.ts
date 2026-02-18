@@ -9,7 +9,10 @@ export interface MeetingUrl {
 
 const MEETING_PATTERNS: { re: RegExp; label: string }[] = [
   { re: /https?:\/\/(?:\w+\.)?zoom\.us\/j\/[\w?=&%-]+/i, label: 'Zoom' },
-  { re: /https?:\/\/teams\.microsoft\.com\/l\/meetup-join\/[\w/?=&%._~:-]+/i, label: 'Microsoft Teams' },
+  {
+    re: /https?:\/\/teams\.microsoft\.com\/l\/meetup-join\/[\w/?=&%._~:-]+/i,
+    label: 'Microsoft Teams',
+  },
   { re: /https?:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i, label: 'Google Meet' },
   { re: /https?:\/\/[\w-]+\.webex\.com\/meet\/[\w/.-]+/i, label: 'Webex' },
   { re: /https?:\/\/[\w-]+\.webex\.com\/j\.php\?[\w=&%-]+/i, label: 'Webex' },
