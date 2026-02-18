@@ -307,7 +307,20 @@ export default class HooksService {
 
     // Add to calendar if rule requests it or global auto_calendar is on
     if (actions.addToCalendar ?? this.config.autoCalendar) {
-      await this.applyCalendarAction(email);
+      const { isCalendarProcessed, markCalendarProcessed } = await import(
+        '../utils/calendar-state.js'
+      );
+      const already = await isCalendarProcessed(email.account, email.meta.id);
+      if (!already) {
+        await this.applyCalendarAction(email);
+        await markCalendarProcessed(email.account, email.meta.id, 'event', email.meta.subject);
+      } else {
+        await mcpLog(
+          'info',
+          'hooks',
+          `Calendar: skipping auto-add for ${email.meta.id} (already processed once)`,
+        );
+      }
     }
   }
 
@@ -458,7 +471,20 @@ export default class HooksService {
 
     // Add to calendar if AI triage requested it or global auto_calendar is on
     if (triage.addToCalendar ?? this.config.autoCalendar) {
-      await this.applyCalendarAction(email);
+      const { isCalendarProcessed, markCalendarProcessed } = await import(
+        '../utils/calendar-state.js'
+      );
+      const already = await isCalendarProcessed(email.account, email.meta.id);
+      if (!already) {
+        await this.applyCalendarAction(email);
+        await markCalendarProcessed(email.account, email.meta.id, 'event', email.meta.subject);
+      } else {
+        await mcpLog(
+          'info',
+          'hooks',
+          `Calendar: skipping auto-add for ${email.meta.id} (already processed once — instruct AI to add again)`,
+        );
+      }
     }
   }
 
@@ -483,6 +509,7 @@ export default class HooksService {
       let start = new Date(full.date);
       let end = new Date(start.getTime() + 60 * 60 * 1000);
       let location: string | undefined;
+      let icsUid: string | undefined;
 
       try {
         const { default: CalSvc } = await import('./calendar.service.js');
@@ -498,6 +525,7 @@ export default class HooksService {
             start = new Date(events[0].start);
             end = new Date(events[0].end);
             location = events[0].location;
+            icsUid = events[0].uid;
           }
         }
       } catch {
@@ -505,7 +533,7 @@ export default class HooksService {
       }
 
       const meetingUrl = extractMeetingUrl(combined);
-      const conference = extractConferenceDetails(bodyText || bodyHtml);
+      const conference = extractConferenceDetails(bodyText !== '' ? bodyText : bodyHtml);
 
       // Save attachments
       let savedAttachments: Awaited<ReturnType<typeof this.imapService.saveEmailAttachments>> = [];
@@ -534,7 +562,7 @@ export default class HooksService {
         meetingId: conference?.meetingId,
         passcode: conference?.passcode,
         conferenceProvider: conference?.provider,
-        bodyExcerpt: bodyText || bodyHtml,
+        bodyExcerpt: bodyText !== '' ? bodyText : bodyHtml,
         savedAttachments,
       });
 
@@ -552,6 +580,7 @@ export default class HooksService {
           dialIn: conference?.dialIn,
           meetingId: conference?.meetingId,
           passcode: conference?.passcode,
+          icsUid,
         },
         this.config.calendarName !== '' ? this.config.calendarName : undefined,
         { confirm: this.config.calendarConfirm !== false },

@@ -11,6 +11,7 @@ import type CalendarService from '../services/calendar.service.js';
 import type HooksService from '../services/hooks.service.js';
 import type ImapService from '../services/imap.service.js';
 import type LocalCalendarService from '../services/local-calendar.service.js';
+import type RemindersService from '../services/reminders.service.js';
 import type SchedulerService from '../services/scheduler.service.js';
 import type SmtpService from '../services/smtp.service.js';
 import type TemplateService from '../services/template.service.js';
@@ -45,6 +46,7 @@ export default function registerAllTools(
   templateService: TemplateService,
   calendarService: CalendarService,
   localCalendarService: LocalCalendarService,
+  remindersService: RemindersService,
   schedulerService: SchedulerService,
   watcherService: WatcherService,
   hooksService: HooksService,
@@ -59,7 +61,7 @@ export default function registerAllTools(
   registerContactsTools(server, imapService);
   registerThreadTools(server, imapService);
   registerTemplateReadTools(server, templateService);
-  registerCalendarTools(server, imapService, calendarService, localCalendarService);
+  registerCalendarTools(server, imapService, calendarService, localCalendarService, remindersService);
   registerAnalyticsTools(server, imapService);
   registerHealthTools(server, connections, imapService);
   registerLocateTools(server, imapService);

@@ -41,3 +41,6 @@ export const SCHEDULED_SENT_DIR = path.join(xdg.state, 'scheduled', 'sent');
 
 /** Directory for attachments saved when adding email events to the local calendar */
 export const CALENDAR_ATTACHMENTS_DIR = path.join(xdg.data, 'calendar-attachments');
+
+/** JSON state file tracking which emails have been auto-processed for calendar/reminders */
+export const CALENDAR_STATE_FILE = path.join(xdg.state, 'calendar-processed.json');

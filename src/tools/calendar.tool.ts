@@ -1,10 +1,12 @@
 /**
  * MCP Tools: calendar operations
  *
- * - extract_calendar   — parse ICS/iCalendar from email
- * - add_to_calendar    — add email event to local calendar (with confirmation dialog)
- * - check_calendar_permissions — check OS calendar access
- * - list_calendars     — list available local calendars
+ * - extract_calendar            — parse ICS/iCalendar from email
+ * - add_to_calendar             — add email event to local calendar (with confirmation dialog + dedup)
+ * - create_reminder             — create a reminder in macOS Reminders.app from email
+ * - analyze_email_for_scheduling — detect events + reminders in email; AI decides what to create
+ * - check_calendar_permissions  — check OS calendar/reminders access
+ * - list_calendars              — list available local calendars
  */
 
 import { join } from 'node:path';
@@ -16,15 +18,21 @@ import { CALENDAR_ATTACHMENTS_DIR } from '../config/xdg.js';
 import type CalendarService from '../services/calendar.service.js';
 import type ImapService from '../services/imap.service.js';
 import type LocalCalendarService from '../services/local-calendar.service.js';
+import type RemindersService from '../services/reminders.service.js';
 import { buildCalendarNotes } from '../utils/calendar-notes.js';
 import { extractConferenceDetails } from '../utils/conference-details.js';
 import { extractMeetingUrl } from '../utils/meeting-url.js';
+
+// Keywords that suggest an action item / reminder rather than a calendar event
+const REMINDER_KEYWORDS =
+  /\b(deadline|due by|respond by|reply by|action required|follow.?up|please review|please send|please confirm|submit by|complete by|return by|RSVP by|by (monday|tuesday|wednesday|thursday|friday|saturday|sunday)|by (jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec))\b/i;
 
 export default function registerCalendarTools(
   server: McpServer,
   imapService: ImapService,
   calendarService: CalendarService,
   localCalendarService: LocalCalendarService,
+  remindersService: RemindersService,
 ): void {
   // ---------------------------------------------------------------------------
   // extract_calendar
@@ -136,6 +144,7 @@ export default function registerCalendarTools(
       let eventLocation: string | undefined;
       let eventOrganizer: string | undefined;
       let eventAttendees: string[] = [];
+      let icsUid: string | undefined;
 
       const icsContents = await imapService.getCalendarParts(account, mailbox, emailId);
       if (icsContents.length > 0) {
@@ -145,6 +154,7 @@ export default function registerCalendarTools(
           eventStart = new Date(ev.start);
           eventEnd = new Date(ev.end);
           eventLocation = ev.location;
+          icsUid = ev.uid;
           if (ev.organizer) {
             eventOrganizer = ev.organizer.name
               ? `${ev.organizer.name} <${ev.organizer.address}>`
@@ -209,7 +219,7 @@ export default function registerCalendarTools(
         savedAttachments,
       });
 
-      // 6. Add to calendar (shows dialog if confirm=true)
+      // 6. Add to calendar (shows dialog if confirm=true, dedup check is automatic)
       const result = await localCalendarService.addEvent(
         {
           title: email.subject,
@@ -226,6 +236,7 @@ export default function registerCalendarTools(
           meetingId: conference?.meetingId,
           passcode: conference?.passcode,
           conferenceProvider: conference?.provider,
+          icsUid,
         },
         calendarName,
         { confirm },
@@ -236,6 +247,10 @@ export default function registerCalendarTools(
         status: result.status,
         message: result.message,
       };
+      if (result.status === 'duplicate') {
+        details.duplicate = result.duplicate;
+        details.hint = 'Event already exists. Use skipDuplicateCheck or update the existing event.';
+      }
       if (result.status === 'added') {
         details.event = {
           title: email.subject,
@@ -275,14 +290,24 @@ export default function registerCalendarTools(
     {},
     { readOnlyHint: true, destructiveHint: false },
     async () => {
-      const result = await localCalendarService.checkPermissions();
+      const [calResult, remResult] = await Promise.all([
+        localCalendarService.checkPermissions(),
+        remindersService.checkPermissions(),
+      ]);
       const lines = [
-        `Platform: ${result.platform}`,
-        `Access granted: ${result.granted ? '✅ Yes' : '❌ No'}`,
+        '--- Calendar.app ---',
+        `Platform: ${calResult.platform}`,
+        `Access granted: ${calResult.granted ? '✅ Yes' : '❌ No'}`,
       ];
-      if (!result.granted && result.instructions.length > 0) {
+      if (!calResult.granted && calResult.instructions.length > 0) {
         lines.push('', 'Setup instructions:');
-        result.instructions.forEach((line, i) => lines.push(`  ${i === 0 ? '' : `${i}. `}${line}`));
+        calResult.instructions.forEach((line, i) => lines.push(`  ${i === 0 ? '' : `${i}. `}${line}`));
+      }
+      lines.push('', '--- Reminders.app ---');
+      lines.push(`Access granted: ${remResult.granted ? '✅ Yes' : '❌ No'}`);
+      if (!remResult.granted && remResult.instructions.length > 0) {
+        lines.push('', 'Setup instructions:');
+        remResult.instructions.forEach((line, i) => lines.push(`  ${i === 0 ? '' : `${i}. `}${line}`));
       }
       return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
     },
@@ -315,6 +340,204 @@ export default function registerCalendarTools(
       const lines = [`Found ${calendars.length} calendar(s):`, ''];
       calendars.forEach((c, i) => lines.push(`  ${i + 1}. ${c.name} (id: ${c.id})`));
       return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // create_reminder
+  // ---------------------------------------------------------------------------
+
+  server.tool(
+    'create_reminder',
+    [
+      'Create a reminder in macOS Reminders.app from an email.',
+      'Shows a native confirmation dialog before adding.',
+      'Use for action items, deadlines, and follow-up tasks extracted from emails.',
+      'Use analyze_email_for_scheduling first to let the AI decide if a reminder is appropriate.',
+    ].join(' '),
+    {
+      account: z.string().describe('Email account name'),
+      email_id: z.string().describe('Email ID from list_emails_metadata'),
+      mailbox: z.string().default('INBOX').describe('Mailbox containing the email'),
+      title: z.string().optional().describe('Reminder title (defaults to email subject)'),
+      notes: z.string().optional().describe('Reminder body/notes (defaults to auto-built from email)'),
+      due_date: z
+        .string()
+        .optional()
+        .describe('ISO 8601 due date (e.g. 2026-02-20T10:00:00). Leave empty for no due date.'),
+      priority: z
+        .enum(['none', 'low', 'medium', 'high'])
+        .default('none')
+        .describe('Reminder priority'),
+      list_name: z
+        .string()
+        .optional()
+        .describe('Reminders list name (default list if omitted)'),
+      confirm: z
+        .boolean()
+        .default(true)
+        .describe('Show native confirmation dialog before adding (default: true)'),
+    },
+    { readOnlyHint: false, destructiveHint: false },
+    async ({ account, email_id: emailId, mailbox, title, notes, due_date, priority, list_name, confirm }) => {
+      const email = await imapService.getEmail(account, emailId, mailbox);
+      const bodyText = email.bodyText ?? '';
+      const bodyHtml = email.bodyHtml ?? '';
+
+      const reminderTitle = title ?? email.subject;
+      const from = email.from.name
+        ? `${email.from.name} <${email.from.address}>`
+        : email.from.address;
+      const snippet = (bodyText !== '' ? bodyText : bodyHtml).substring(0, 400).trim();
+      const reminderNotes =
+        notes ??
+        [`\uD83D\uDCE7 From: ${from}`, `\uD83D\uDCCC Subject: ${email.subject}`, '', snippet]
+          .filter(Boolean)
+          .join('\n');
+
+      const result = await remindersService.addReminder(
+        {
+          title: reminderTitle,
+          notes: reminderNotes,
+          dueDate: due_date,
+          priority,
+          listName: list_name,
+        },
+        { confirm },
+      );
+
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // analyze_email_for_scheduling
+  // ---------------------------------------------------------------------------
+
+  server.tool(
+    'analyze_email_for_scheduling',
+    [
+      'Analyze an email to detect calendar events and/or reminder-worthy content.',
+      'Returns structured analysis so the AI can decide whether to call add_to_calendar,',
+      'create_reminder, both, or neither.',
+      'Use this as the first step before creating any scheduling resource.',
+    ].join(' '),
+    {
+      account: z.string().describe('Email account name'),
+      email_id: z.string().describe('Email ID from list_emails_metadata'),
+      mailbox: z.string().default('INBOX').describe('Mailbox containing the email'),
+    },
+    { readOnlyHint: true, destructiveHint: false },
+    async ({ account, email_id: emailId, mailbox }) => {
+      const email = await imapService.getEmail(account, emailId, mailbox);
+      const bodyText = email.bodyText ?? '';
+      const bodyHtml = email.bodyHtml ?? '';
+      const combined = `${bodyText}\n${bodyHtml}`;
+
+      // Check for ICS event
+      const icsContents = await imapService.getCalendarParts(account, mailbox, emailId);
+      let detectedEvent: Record<string, unknown> | null = null;
+      if (icsContents.length > 0) {
+        const events = calendarService.extractFromParts(icsContents);
+        if (events.length > 0) {
+          const ev = events[0];
+          detectedEvent = {
+            source: 'ics_attachment',
+            confidence: 'high',
+            title: ev.summary,
+            start: ev.start,
+            end: ev.end,
+            location: ev.location,
+            uid: ev.uid,
+            organizer: ev.organizer?.address,
+            attendees: ev.attendees.map((a) => a.address),
+          };
+        }
+      }
+
+      // Meeting URL detection
+      const meetingUrl = extractMeetingUrl(combined);
+      if (!detectedEvent && meetingUrl) {
+        detectedEvent = {
+          source: 'meeting_url',
+          confidence: 'medium',
+          title: email.subject,
+          start: email.date,
+          end: new Date(new Date(email.date).getTime() + 60 * 60 * 1000).toISOString(),
+          meetingUrl: meetingUrl.url,
+          provider: meetingUrl.label,
+        };
+      }
+
+      // Conference details
+      const conference = extractConferenceDetails(bodyText !== '' ? bodyText : bodyHtml);
+
+      // Reminder signal detection
+      const reminderMatch = REMINDER_KEYWORDS.exec(combined);
+      const detectedReminder = reminderMatch
+        ? {
+            confidence: 'medium',
+            keyword: reminderMatch[0],
+            title: email.subject,
+            suggestedNotes: `From: ${email.from.address}\n\n${(bodyText !== '' ? bodyText : bodyHtml).substring(0, 300)}`,
+          }
+        : null;
+
+      // Check if already processed by hooks
+      const { isCalendarProcessed, listCalendarProcessed } = await import(
+        '../utils/calendar-state.js'
+      );
+      const alreadyProcessed = await isCalendarProcessed(account, emailId);
+      const processedList = alreadyProcessed ? await listCalendarProcessed() : [];
+      const processedEntry = processedList.find(
+        ({ key }) => key.includes(emailId),
+      );
+
+      let recommendation: string;
+      if (detectedEvent && detectedReminder) {
+        recommendation = 'both';
+      } else if (detectedEvent) {
+        recommendation = 'event';
+      } else if (detectedReminder) {
+        recommendation = 'reminder';
+      } else {
+        recommendation = 'none';
+      }
+
+      const analysis = {
+        emailId,
+        subject: email.subject,
+        from: email.from.address,
+        date: email.date,
+        attachmentCount: email.attachments.length,
+        recommendation,
+        alreadyAutoProcessed: alreadyProcessed,
+        autoProcessedEntry: processedEntry?.entry ?? null,
+        detectedEvent,
+        detectedReminder,
+        conferenceDetails: conference ?? null,
+        availableActions: {
+          add_to_calendar: detectedEvent !== null || meetingUrl !== undefined,
+          create_reminder: detectedReminder !== null,
+        },
+        instructions: [
+          detectedEvent
+            ? `Call add_to_calendar(account="${account}", email_id="${emailId}") to add the event.`
+            : null,
+          detectedReminder
+            ? `Call create_reminder(account="${account}", email_id="${emailId}") to add the reminder.`
+            : null,
+          alreadyProcessed
+            ? '\u26A0\uFE0F This email was already auto-processed once by the hook system. You are explicitly choosing to process it again.'
+            : null,
+        ].filter(Boolean),
+      };
+
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(analysis, null, 2) }],
+      };
     },
   );
 }

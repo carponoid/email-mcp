@@ -53,15 +53,26 @@ export interface LocalCalendarEventInput {
   meetingId?: string;
   passcode?: string;
   conferenceProvider?: string;
+  /** ICS UID for duplicate detection */
+  icsUid?: string;
 }
 
-export type AddEventStatus = 'added' | 'cancelled' | 'timed_out' | 'no_display';
+export type AddEventStatus = 'added' | 'cancelled' | 'timed_out' | 'no_display' | 'duplicate';
 
 export interface AddEventResult {
   status: AddEventStatus;
   eventId?: string;
   calendarName?: string;
   message: string;
+  /** Populated when status is 'duplicate' */
+  duplicate?: { eventId: string; calendarName: string };
+}
+
+export interface ExistingEventResult {
+  found: boolean;
+  eventId?: string;
+  calendarName?: string;
+  start?: string;
 }
 
 export interface CalendarInfo {
@@ -248,6 +259,8 @@ function statusMessage(status: AddEventStatus, title: string, calName: string | 
   switch (status) {
     case 'added':
       return `\u2705 Event added: "${title}" \u2192 ${calName ?? 'calendar'}.`;
+    case 'duplicate':
+      return `\u26A0\uFE0F Event already exists in ${calName ?? 'calendar'}: "${title}". Skipped.`;
     case 'cancelled':
       return '\uD83D\uDEAB Cancelled \u2014 event was not added to the calendar.';
     case 'timed_out':
@@ -310,6 +323,76 @@ async function listCalendarsMacOS(): Promise<CalendarInfo[]> {
     return JSON.parse(stdout.trim()) as CalendarInfo[];
   } catch {
     return [];
+  }
+}
+
+async function findExistingEventMacOS(
+  title: string,
+  start: Date,
+  icsUid?: string,
+): Promise<ExistingEventResult> {
+  const toleranceMs = 2 * 60 * 1000; // ±2 minutes
+  const windowStart = new Date(start.getTime() - toleranceMs).toISOString();
+  const windowEnd = new Date(start.getTime() + toleranceMs).toISOString();
+
+  const t = {
+    title: JSON.stringify(title),
+    windowStart: JSON.stringify(windowStart),
+    windowEnd: JSON.stringify(windowEnd),
+    icsUid: JSON.stringify(icsUid ?? ''),
+  };
+
+  const script = `(() => {
+  try {
+    const Calendar = Application('Calendar');
+    const icsUid = ${t.icsUid};
+    const title  = ${t.title};
+    const wStart = new Date(${t.windowStart});
+    const wEnd   = new Date(${t.windowEnd});
+
+    for (const cal of Calendar.calendars()) {
+      let calName = '';
+      try { calName = cal.name(); } catch(e) {}
+
+      // UID-based match (most reliable)
+      if (icsUid) {
+        try {
+          const byUid = cal.events.whose({ uid: icsUid });
+          if (byUid.length > 0) {
+            let eid = ''; try { eid = byUid[0].uid(); } catch(e) {}
+            let sd = ''; try { sd = byUid[0].startDate().toISOString(); } catch(e) {}
+            return JSON.stringify({ found: true, eventId: eid, calendarName: calName, start: sd });
+          }
+        } catch(e) {}
+      }
+
+      // Title + start date match
+      try {
+        const bySummary = cal.events.whose({ summary: title });
+        for (const ev of bySummary) {
+          try {
+            const evStart = ev.startDate();
+            if (evStart >= wStart && evStart <= wEnd) {
+              let eid = ''; try { eid = ev.uid(); } catch(e2) {}
+              return JSON.stringify({ found: true, eventId: eid, calendarName: calName, start: evStart.toISOString() });
+            }
+          } catch(e2) {}
+        }
+      } catch(e) {}
+    }
+    return JSON.stringify({ found: false });
+  } catch(e) {
+    return JSON.stringify({ found: false });
+  }
+})()`;
+
+  try {
+    const { stdout } = await execFile('osascript', ['-l', 'JavaScript', '-e', script], {
+      timeout: 15_000,
+    });
+    return JSON.parse(stdout.trim()) as ExistingEventResult;
+  } catch {
+    return { found: false };
   }
 }
 
@@ -405,12 +488,43 @@ export default class LocalCalendarService {
     return listCalendarsMacOS();
   }
 
+  /** Check all calendars for an existing event matching by ICS UID or title+startDate. */
+  async findExistingEvent(
+    title: string,
+    start: Date,
+    icsUid?: string,
+  ): Promise<ExistingEventResult> {
+    if (this.platform !== 'darwin') return { found: false };
+    return findExistingEventMacOS(title, start, icsUid);
+  }
+
   async addEvent(
     event: LocalCalendarEventInput,
     calendarName?: string,
-    opts: { confirm?: boolean } = {},
+    opts: { confirm?: boolean; skipDuplicateCheck?: boolean } = {},
   ): Promise<AddEventResult> {
     const confirm = opts.confirm !== false;
+
+    // Duplicate detection (macOS only, can opt out)
+    if (this.platform === 'darwin' && opts.skipDuplicateCheck !== true) {
+      const existing = await findExistingEventMacOS(
+        event.title,
+        event.start,
+        event.icsUid,
+      );
+      if (existing.found) {
+        return {
+          status: 'duplicate',
+          eventId: existing.eventId,
+          calendarName: existing.calendarName,
+          message: statusMessage('duplicate', event.title, existing.calendarName),
+          duplicate: existing.found
+            ? { eventId: existing.eventId ?? '', calendarName: existing.calendarName ?? '' }
+            : undefined,
+        };
+      }
+    }
+
     if (this.platform === 'darwin') {
       return addEventMacOS(event, calendarName, confirm);
     }
