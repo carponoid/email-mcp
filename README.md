@@ -5,7 +5,7 @@
 
 An MCP (Model Context Protocol) server providing comprehensive email capabilities via IMAP and SMTP.
 
-Enables AI assistants to read, search, send, manage, schedule, and analyze emails across multiple accounts. Exposes 40 tools, 7 prompts, and 6 resources over the MCP protocol with OAuth2 support _(experimental)_, email scheduling, calendar extraction, analytics, provider-aware label management, real-time IMAP IDLE watcher with AI-powered triage, customizable presets and static rules, and a guided setup wizard.
+Enables AI assistants to read, search, send, manage, schedule, and analyze emails across multiple accounts. Exposes 42 tools, 7 prompts, and 6 resources over the MCP protocol with OAuth2 support _(experimental)_, email scheduling, calendar extraction, analytics, provider-aware label management, real-time IMAP IDLE watcher with AI-powered triage, customizable presets and static rules, and a guided setup wizard.
 
 ## Table of Contents
 
@@ -549,7 +549,7 @@ src/
 │   ├── notifier.service.ts — Multi-channel notification dispatcher (desktop/sound/webhook)
 │   ├── presets.ts         — Built-in hook presets (inbox-zero, gtd, priority-focus, etc.)
 │   └── event-bus.ts       — Typed EventEmitter for internal email events
-├── tools/                 — MCP tool definitions (40)
+├── tools/                 — MCP tool definitions (42)
 ├── prompts/               — MCP prompt definitions (7)
 ├── resources/             — MCP resource definitions (6)
 ├── safety/                — Audit trail and rate limiter
