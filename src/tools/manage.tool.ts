@@ -14,7 +14,9 @@ export default function registerManageTools(server: McpServer, imapService: Imap
   // ---------------------------------------------------------------------------
   server.tool(
     'move_email',
-    'Move an email to a different mailbox folder. Use list_mailboxes to see available folders.',
+    'Move an email to a different mailbox folder. ' +
+      'The sourceMailbox must be a real folder, not a virtual one like "All Mail". ' +
+      'Use find_email_folder first if the email was discovered in a virtual folder.',
     {
       account: z.string().describe('Account name from list_accounts'),
       emailId: z.string().describe('Email ID to move (from list_emails)'),
@@ -68,7 +70,8 @@ export default function registerManageTools(server: McpServer, imapService: Imap
   // ---------------------------------------------------------------------------
   server.tool(
     'delete_email',
-    'Delete an email. By default moves to Trash. Set permanent=true for permanent deletion (⚠️ irreversible).',
+    'Delete an email. By default moves to Trash. Set permanent=true for permanent deletion (⚠️ irreversible). ' +
+      'The mailbox must be a real folder. Use find_email_folder first if the email was found in a virtual folder.',
     {
       account: z.string().describe('Account name from list_accounts'),
       emailId: z.string().describe('Email ID to delete (from list_emails)'),

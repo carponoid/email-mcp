@@ -23,6 +23,7 @@ import registerDraftTools from './drafts.tool.js';
 import registerEmailsTools from './emails.tool.js';
 import registerFolderTools from './folders.tool.js';
 import registerHealthTools from './health.tool.js';
+import registerLocateTools from './locate.tool.js';
 import registerMailboxesTools from './mailboxes.tool.js';
 import registerManageTools from './manage.tool.js';
 import registerSchedulerTools from './scheduler.tool.js';
@@ -53,6 +54,7 @@ export default function registerAllTools(
   registerCalendarTools(server, imapService, calendarService);
   registerAnalyticsTools(server, imapService);
   registerHealthTools(server, connections, imapService);
+  registerLocateTools(server, imapService);
 
   // Write tools — skipped in read-only mode
   if (!readOnly) {

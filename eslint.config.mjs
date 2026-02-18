@@ -60,4 +60,11 @@ export default defineConfig([
       "no-console": "off",
     },
   },
+  {
+    name: "cli/allow-hashbang",
+    files: ["src/main.ts"],
+    rules: {
+      "n/hashbang": "off",
+    },
+  },
 ]);

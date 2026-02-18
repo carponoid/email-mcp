@@ -1,5 +1,5 @@
 {
-  "name": "email-mcp",
+  "name": "@codefuturist/email-mcp",
   "version": "0.1.0",
   "description": "Email MCP server with IMAP + SMTP support",
   "type": "module",
@@ -21,6 +21,13 @@
     "format": "biome format --write src/",
     "format:check": "biome check src/",
     "check": "biome check src/ && eslint src/",
+    "commit": "cog commit",
+    "changelog": "cog changelog",
+    "version:check": "cog check",
+    "version:bump": "cog bump --auto",
+    "version:bump:minor": "cog bump --minor",
+    "version:bump:patch": "cog bump --patch",
+    "version:log": "cog log",
     "prepublishOnly": "tsc"
   },
   "keywords": [

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * Email MCP Server — Main entry point.
  *

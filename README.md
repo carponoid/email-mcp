@@ -5,7 +5,7 @@
 
 An MCP (Model Context Protocol) server providing comprehensive email capabilities via IMAP and SMTP.
 
-Enables AI assistants to read, search, send, manage, schedule, and analyze emails across multiple accounts. Exposes 28 tools, 7 prompts, and 6 resources over the MCP protocol with OAuth2 support, email scheduling, calendar extraction, analytics, and a guided setup wizard.
+Enables AI assistants to read, search, send, manage, schedule, and analyze emails across multiple accounts. Exposes 29 tools, 7 prompts, and 6 resources over the MCP protocol with OAuth2 support, email scheduling, calendar extraction, analytics, and a guided setup wizard.
 
 ## Table of Contents
 
@@ -207,7 +207,7 @@ Scheduled emails are stored as JSON files in `~/.local/state/email-mcp/scheduled
 
 ### Tools (28)
 
-#### Read (12)
+#### Read (13)
 
 | Tool | Description |
 |------|-------------|
@@ -217,6 +217,7 @@ Scheduled emails are stored as JSON files in `~/.local/state/email-mcp/scheduled
 | `get_email` | Read full email content with attachment metadata |
 | `search_emails` | Search by keyword across subject, sender, and body |
 | `download_attachment` | Download an email attachment by filename |
+| `find_email_folder` | Discover the real folder(s) an email resides in (resolves virtual folders) |
 | `extract_contacts` | Extract unique contacts from recent email headers |
 | `get_thread` | Reconstruct a conversation thread via References/In-Reply-To |
 | `list_templates` | List available email templates |

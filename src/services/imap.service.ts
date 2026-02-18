@@ -513,6 +513,87 @@ export default class ImapService {
   }
 
   // -------------------------------------------------------------------------
+  // Virtual-folder detection
+  // -------------------------------------------------------------------------
+
+  private static readonly VIRTUAL_SPECIAL_USE = new Set(['\\All', '\\Flagged']);
+
+  private static async assertRealMailbox(client: ImapFlow, mailboxPath: string): Promise<void> {
+    const mailboxes = await client.list();
+    const mb = mailboxes.find((m) => m.path === mailboxPath);
+    if (!mb) return; // unknown — let the server reject if invalid
+    if (mb.specialUse && ImapService.VIRTUAL_SPECIAL_USE.has(mb.specialUse)) {
+      throw new Error(
+        `"${mailboxPath}" is a virtual folder (${mb.specialUse}). ` +
+          'Use find_email_folder to locate the real folder first.',
+      );
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Find real folder for an email
+  // -------------------------------------------------------------------------
+
+  async findEmailFolder(
+    accountName: string,
+    emailId: string,
+    sourceMailbox: string,
+  ): Promise<{ folders: string[]; messageId?: string }> {
+    const client = await this.connections.getImapClient(accountName);
+
+    // 1. Fetch Message-ID from the source mailbox
+    let messageId: string | undefined;
+    const srcLock = await client.getMailboxLock(sourceMailbox);
+    try {
+      const msg = await client.fetchOne(emailId, { headers: true }, { uid: true });
+      if (msg && msg.headers && Buffer.isBuffer(msg.headers)) {
+        const headerText = msg.headers.toString('utf-8');
+        const match = /^message-id:\s*(.+)$/im.exec(headerText);
+        if (match) {
+          messageId = match[1].trim();
+        }
+      }
+    } finally {
+      srcLock.release();
+    }
+
+    if (!messageId) {
+      throw new Error('Could not retrieve Message-ID for this email.');
+    }
+
+    // 2. List all real mailboxes (exclude virtual and non-selectable)
+    const allMailboxes = await client.list();
+    const realMailboxes = allMailboxes.filter((mb) => {
+      if (mb.specialUse && ImapService.VIRTUAL_SPECIAL_USE.has(mb.specialUse)) return false;
+      if (!mb.listed) return false;
+      return true;
+    });
+
+    // 3. Search each real mailbox for the Message-ID (sequential — each needs its own lock)
+    const folders: string[] = [];
+    const searchMailbox = async (mbPath: string): Promise<void> => {
+      const lock = await client.getMailboxLock(mbPath);
+      try {
+        const results = await client.search({ header: { 'message-id': messageId } }, { uid: true });
+        if (results && Array.isArray(results) && results.length > 0) {
+          folders.push(mbPath);
+        }
+      } catch {
+        // Skip folders that don't support SEARCH (e.g. \Noselect)
+      } finally {
+        lock.release();
+      }
+    };
+    // eslint-disable-next-line no-restricted-syntax
+    for (const mb of realMailboxes) {
+      // eslint-disable-next-line no-await-in-loop
+      await searchMailbox(mb.path);
+    }
+
+    return { folders, messageId };
+  }
+
+  // -------------------------------------------------------------------------
   // Move / Delete
   // -------------------------------------------------------------------------
 
@@ -523,9 +604,15 @@ export default class ImapService {
     destinationMailbox: string,
   ): Promise<void> {
     const client = await this.connections.getImapClient(accountName);
+    await ImapService.assertRealMailbox(client, sourceMailbox);
     const lock = await client.getMailboxLock(sourceMailbox);
     try {
-      await client.messageMove(emailId, destinationMailbox, { uid: true });
+      const ok = await client.messageMove(emailId, destinationMailbox, { uid: true });
+      if (!ok) {
+        throw new Error(
+          `IMAP server rejected the move from "${sourceMailbox}" to "${destinationMailbox}".`,
+        );
+      }
     } finally {
       lock.release();
     }
@@ -542,19 +629,25 @@ export default class ImapService {
     if (permanent) {
       const lock = await client.getMailboxLock(mailbox);
       try {
-        await client.messageDelete(emailId, { uid: true });
+        const ok = await client.messageDelete(emailId, { uid: true });
+        if (!ok) {
+          throw new Error('IMAP server rejected the delete operation.');
+        }
       } finally {
         lock.release();
       }
     } else {
-      // Move to Trash
+      await ImapService.assertRealMailbox(client, mailbox);
       const mailboxes = await client.list();
       const trash = mailboxes.find((mb) => mb.specialUse === '\\Trash');
       const trashPath = trash?.path ?? 'Trash';
 
       const lock = await client.getMailboxLock(mailbox);
       try {
-        await client.messageMove(emailId, trashPath, { uid: true });
+        const ok = await client.messageMove(emailId, trashPath, { uid: true });
+        if (!ok) {
+          throw new Error('IMAP server rejected the move to Trash.');
+        }
       } finally {
         lock.release();
       }
@@ -581,10 +674,14 @@ export default class ImapService {
         unflag: { flags: ['\\Flagged'], add: false },
       };
       const { flags, add } = flagMap[action];
+      let ok: boolean;
       if (add) {
-        await client.messageFlagsAdd(emailId, flags, { uid: true });
+        ok = await client.messageFlagsAdd(emailId, flags, { uid: true });
       } else {
-        await client.messageFlagsRemove(emailId, flags, { uid: true });
+        ok = await client.messageFlagsRemove(emailId, flags, { uid: true });
+      }
+      if (!ok) {
+        throw new Error(`IMAP server rejected the ${action} flag operation.`);
       }
     } finally {
       lock.release();
@@ -618,12 +715,18 @@ export default class ImapService {
       };
       const { flags, add } = flagMap[action];
       const range = ids.join(',');
+      let ok: boolean;
       if (add) {
-        await client.messageFlagsAdd(range, flags, { uid: true });
+        ok = await client.messageFlagsAdd(range, flags, { uid: true });
       } else {
-        await client.messageFlagsRemove(range, flags, { uid: true });
+        ok = await client.messageFlagsRemove(range, flags, { uid: true });
       }
-      result.succeeded = ids.length;
+      if (ok) {
+        result.succeeded = ids.length;
+      } else {
+        result.failed = ids.length;
+        result.errors = ['IMAP server rejected the flag operation.'];
+      }
     } catch (err) {
       result.failed = ids.length;
       result.errors = [err instanceof Error ? err.message : String(err)];
@@ -641,6 +744,7 @@ export default class ImapService {
     destination: string,
   ): Promise<BulkResult> {
     const client = await this.connections.getImapClient(accountName);
+    await ImapService.assertRealMailbox(client, mailbox);
     const lock = await client.getMailboxLock(mailbox);
     const result: BulkResult = {
       total: ids.length,
@@ -650,8 +754,13 @@ export default class ImapService {
     };
     try {
       const range = ids.join(',');
-      await client.messageMove(range, destination, { uid: true });
-      result.succeeded = ids.length;
+      const ok = await client.messageMove(range, destination, { uid: true });
+      if (ok) {
+        result.succeeded = ids.length;
+      } else {
+        result.failed = ids.length;
+        result.errors = ['IMAP server rejected the move operation.'];
+      }
     } catch (err) {
       result.failed = ids.length;
       result.errors = [err instanceof Error ? err.message : String(err)];
@@ -680,8 +789,13 @@ export default class ImapService {
       const lock = await client.getMailboxLock(mailbox);
       try {
         const range = ids.join(',');
-        await client.messageDelete(range, { uid: true });
-        result.succeeded = ids.length;
+        const ok = await client.messageDelete(range, { uid: true });
+        if (ok) {
+          result.succeeded = ids.length;
+        } else {
+          result.failed = ids.length;
+          result.errors = ['IMAP server rejected the delete operation.'];
+        }
       } catch (err) {
         result.failed = ids.length;
         result.errors = [err instanceof Error ? err.message : String(err)];
@@ -689,6 +803,7 @@ export default class ImapService {
         lock.release();
       }
     } else {
+      await ImapService.assertRealMailbox(client, mailbox);
       const mailboxes = await client.list();
       const trash = mailboxes.find((mb) => mb.specialUse === '\\Trash');
       const trashPath = trash?.path ?? 'Trash';
@@ -696,8 +811,13 @@ export default class ImapService {
       const lock = await client.getMailboxLock(mailbox);
       try {
         const range = ids.join(',');
-        await client.messageMove(range, trashPath, { uid: true });
-        result.succeeded = ids.length;
+        const ok = await client.messageMove(range, trashPath, { uid: true });
+        if (ok) {
+          result.succeeded = ids.length;
+        } else {
+          result.failed = ids.length;
+          result.errors = ['IMAP server rejected the move to Trash.'];
+        }
       } catch (err) {
         result.failed = ids.length;
         result.errors = [err instanceof Error ? err.message : String(err)];
