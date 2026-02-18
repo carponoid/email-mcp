@@ -137,6 +137,9 @@ Commands:
   account delete [name]     Remove an account
   setup                     Alias for 'account add'
   test                      Test connections for all or a specific account
+  install                   Register email-mcp with MCP clients interactively
+  install status            Show registration status for detected clients
+  install remove            Unregister email-mcp from MCP clients
   config show               Show config (passwords masked)
   config edit               Edit global settings (rate limit, read-only)
   config path               Print config file path
@@ -386,6 +389,7 @@ src/
 │   ├── setup.ts           — Legacy setup alias → account add
 │   ├── test.ts            — Connection tester
 │   ├── config-commands.ts — Config management (show, edit, path, init)
+│   ├── install-commands.ts — MCP client registration (install, status, remove)
 │   ├── providers.ts       — Provider auto-detection + OAuth2 endpoints
 │   └── scheduler.ts       — Scheduler CLI
 ├── config/                — Configuration layer

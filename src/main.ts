@@ -40,6 +40,7 @@ Commands:
   account     Account management (list, add, edit, delete)
   setup       Alias for 'account add'
   test        Test connections for all or a specific account
+  install     Register/unregister with MCP clients (Claude, Cursor, …)
   config      Config management (show, edit, path, init)
   scheduler   Email scheduling management (check, list, install, uninstall, status)
   help        Show this help message
@@ -53,6 +54,9 @@ Examples:
   email-mcp setup                    # Alias for account add
   email-mcp test                     # Test all accounts
   email-mcp test personal            # Test specific account
+  email-mcp install                  # Register with detected MCP clients
+  email-mcp install status           # Show client registration status
+  email-mcp install remove           # Unregister from MCP clients
   email-mcp config show              # Show config (passwords masked)
   email-mcp config edit              # Edit global settings
   email-mcp config path              # Print config file path
@@ -165,6 +169,12 @@ async function main(): Promise<void> {
     case 'config': {
       const { default: runConfigCommand } = await import('./cli/config-commands.js');
       await runConfigCommand(process.argv[3]);
+      break;
+    }
+
+    case 'install': {
+      const { default: runInstallCommand } = await import('./cli/install-commands.js');
+      await runInstallCommand(process.argv[3]);
       break;
     }
 
