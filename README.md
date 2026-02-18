@@ -5,7 +5,7 @@
 
 An MCP (Model Context Protocol) server providing comprehensive email capabilities via IMAP and SMTP.
 
-Enables AI assistants to read, search, send, manage, schedule, and analyze emails across multiple accounts. Exposes 35 tools, 7 prompts, and 6 resources over the MCP protocol with OAuth2 support, email scheduling, calendar extraction, analytics, provider-aware label management, real-time IMAP IDLE watcher with AI-powered triage, and a guided setup wizard.
+Enables AI assistants to read, search, send, manage, schedule, and analyze emails across multiple accounts. Exposes 37 tools, 7 prompts, and 6 resources over the MCP protocol with OAuth2 support, email scheduling, calendar extraction, analytics, provider-aware label management, real-time IMAP IDLE watcher with AI-powered triage, customizable presets and static rules, and a guided setup wizard.
 
 ## Table of Contents
 
@@ -252,8 +252,9 @@ Scheduled emails are stored as JSON files in `~/.local/state/email-mcp/scheduled
 
 The IMAP IDLE watcher monitors configured mailboxes in real-time using persistent IDLE connections (separate from tool connections). When new emails arrive:
 
-1. **Notify mode** (default) — Logs new emails via MCP notifications
-2. **Triage mode** — Uses MCP sampling (`sampling/createMessage`) to ask the AI to analyze, prioritize, label, and flag emails automatically
+1. **Static rules** — Pattern-match on from/to/subject → apply labels, flag, or mark read instantly (no AI)
+2. **AI triage** — Remaining emails are analyzed via MCP sampling with a customizable preset prompt
+3. **Notify mode** — Falls back to logging if AI triage is disabled
 
 Configure in `config.toml`:
 
@@ -265,10 +266,49 @@ idle_timeout = 1740     # 29 minutes (IMAP spec max is 30)
 
 [settings.hooks]
 on_new_email = "triage" # "triage" | "notify" | "none"
+preset = "inbox-zero"   # "inbox-zero" | "gtd" | "priority-focus" | "notification-only" | "custom"
 auto_label = true       # apply AI-suggested labels
 auto_flag = true        # flag urgent emails
 batch_delay = 5         # seconds to batch before triage
+
+# User context — appended to preset's AI prompt
+custom_instructions = """
+I'm a software engineer. Emails from @mycompany.com are always high priority.
+Newsletters I read: TL;DR, Hacker Newsletter.
+"""
+
+# Static rules — run BEFORE AI, skip AI if matched
+[[settings.hooks.rules]]
+name = "GitHub Notifications"
+match = { from = "*@github.com" }
+actions = { labels = ["Dev"], mark_read = true }
+
+[[settings.hooks.rules]]
+name = "Newsletter Archive"
+match = { from = "*@substack.com|*@buttondown.email" }
+actions = { labels = ["Newsletter"] }
+
+[[settings.hooks.rules]]
+name = "VIP Contacts"
+match = { from = "ceo@company.com|cto@company.com" }
+actions = { flag = true, labels = ["VIP"] }
 ```
+
+#### Presets
+
+| Preset | Focus | Suggested Labels |
+|--------|-------|------------------|
+| `inbox-zero` | Aggressive categorization + archiving | Newsletter, Notification, Updates, Finance, Social, Promo |
+| `gtd` | Getting Things Done contexts | @Action, @Waiting, @Reference, @Someday, @Delegated |
+| `priority-focus` | Simple priority classification (default) | _(none — just priority + flag)_ |
+| `notification-only` | No AI triage, just log | _(none)_ |
+| `custom` | User defines full system prompt | User-defined |
+
+#### Static Rules
+
+Static rules use glob-style patterns (`*@github.com`) with `|` as OR separator (`*@github.com|*@gitlab.com`). All conditions within a match are AND'd. First matching rule wins.
+
+Available actions: `labels` (string array), `flag` (boolean), `mark_read` (boolean).
 
 Features:
 - **Auto-reconnect** — Exponential backoff (1s → 60s) on connection failures
@@ -279,7 +319,7 @@ Features:
 
 ## API
 
-### Tools (35)
+### Tools (37)
 
 #### Read (13)
 
@@ -335,11 +375,13 @@ Features:
 | `create_label` | Create a new label |
 | `delete_label` | Delete a label |
 
-#### Watcher (1)
+#### Watcher & Hooks (3)
 
 | Tool | Description |
 |------|-------------|
 | `get_watcher_status` | Show IMAP IDLE connections, folders being monitored, and last-seen UIDs |
+| `list_presets` | List available AI triage presets with descriptions and suggested labels |
+| `get_hooks_config` | Show current hooks configuration — preset, rules, and custom instructions |
 
 ### Prompts (7)
 
@@ -407,9 +449,10 @@ src/
 │   ├── calendar.service.ts — ICS/iCalendar parsing
 │   ├── scheduler.service.ts — Email scheduling queue
 │   ├── watcher.service.ts — IMAP IDLE real-time watcher with auto-reconnect
-│   ├── hooks.service.ts   — AI triage via MCP sampling + auto-labeling/flagging
+│   ├── hooks.service.ts   — AI triage via MCP sampling + static rules + auto-labeling/flagging
+│   ├── presets.ts         — Built-in hook presets (inbox-zero, gtd, priority-focus, etc.)
 │   └── event-bus.ts       — Typed EventEmitter for internal email events
-├── tools/                 — MCP tool definitions (35)
+├── tools/                 — MCP tool definitions (37)
 ├── prompts/               — MCP prompt definitions (7)
 ├── resources/             — MCP resource definitions (6)
 ├── safety/                — Audit trail and rate limiter

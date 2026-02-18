@@ -59,7 +59,7 @@ export default function registerAllTools(
   registerAnalyticsTools(server, imapService);
   registerHealthTools(server, connections, imapService);
   registerLocateTools(server, imapService);
-  registerWatcherTools(server, watcherService);
+  registerWatcherTools(server, watcherService, config.settings.hooks);
 
   // Write tools — skipped in read-only mode
   if (!readOnly) {

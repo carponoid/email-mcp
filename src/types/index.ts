@@ -76,11 +76,41 @@ export interface WatcherConfig {
   idleTimeout: number;
 }
 
+// ---------------------------------------------------------------------------
+// Hook Rules
+// ---------------------------------------------------------------------------
+
+export interface HookRuleMatch {
+  from?: string;
+  to?: string;
+  subject?: string;
+}
+
+export interface HookRuleActions {
+  labels?: string[];
+  flag?: boolean;
+  markRead?: boolean;
+}
+
+export interface HookRule {
+  name: string;
+  match: HookRuleMatch;
+  actions: HookRuleActions;
+}
+
+// ---------------------------------------------------------------------------
+// Hooks
+// ---------------------------------------------------------------------------
+
 export interface HooksConfig {
   onNewEmail: 'triage' | 'notify' | 'none';
+  preset: 'inbox-zero' | 'gtd' | 'priority-focus' | 'notification-only' | 'custom';
   autoLabel: boolean;
   autoFlag: boolean;
   batchDelay: number;
+  customInstructions?: string;
+  systemPrompt?: string;
+  rules: HookRule[];
 }
 
 export interface AppConfig {

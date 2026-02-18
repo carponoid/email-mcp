@@ -63,10 +63,22 @@ async function showConfig(): Promise<void> {
     }
     const smtpSecurity = account.smtp.tls ? 'TLS' : 'plain';
     const smtpLabel = account.smtp.starttls ? 'STARTTLS' : smtpSecurity;
+    const smtpPool = account.smtp.pool ?? {
+      enabled: true,
+      maxConnections: 1,
+      maxMessages: 100,
+    };
     const imapSecurity = account.imap.tls ? 'TLS' : 'plain';
     const imapLabel = account.imap.starttls ? 'STARTTLS' : imapSecurity;
     console.log(`  imap     = ${account.imap.host}:${account.imap.port} (${imapLabel})`);
     console.log(`  smtp     = ${account.smtp.host}:${account.smtp.port} (${smtpLabel})`);
+    console.log(
+      `  smtp_pool = ${
+        smtpPool.enabled
+          ? `enabled (${smtpPool.maxConnections} conns, ${smtpPool.maxMessages} msgs/conn)`
+          : 'disabled'
+      }`,
+    );
     console.log(`  password = ${'•'.repeat(8)}\n`);
   });
 }
@@ -142,6 +154,7 @@ async function editSettings(): Promise<void> {
   const updatedConfig = {
     ...config,
     settings: {
+      ...settings,
       rate_limit: parseInt(rateLimitStr, 10),
       read_only: readOnly,
     },

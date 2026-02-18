@@ -63,11 +63,35 @@ export const WatcherConfigSchema = z.object({
   idle_timeout: z.number().int().min(60).max(1740).default(1740),
 });
 
+export const HookRuleMatchSchema = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+  subject: z.string().optional(),
+});
+
+export const HookRuleActionsSchema = z.object({
+  labels: z.array(z.string()).optional(),
+  flag: z.boolean().optional(),
+  mark_read: z.boolean().optional(),
+});
+
+export const HookRuleSchema = z.object({
+  name: z.string().min(1, 'Rule name is required'),
+  match: HookRuleMatchSchema,
+  actions: HookRuleActionsSchema,
+});
+
 export const HooksConfigSchema = z.object({
   on_new_email: z.enum(['triage', 'notify', 'none']).default('notify'),
+  preset: z
+    .enum(['inbox-zero', 'gtd', 'priority-focus', 'notification-only', 'custom'])
+    .default('priority-focus'),
   auto_label: z.boolean().default(false),
   auto_flag: z.boolean().default(false),
   batch_delay: z.number().int().min(1).max(60).default(5),
+  custom_instructions: z.string().optional(),
+  system_prompt: z.string().optional(),
+  rules: z.array(HookRuleSchema).default([]),
 });
 
 export const SettingsSchema = z.object({
@@ -80,9 +104,11 @@ export const SettingsSchema = z.object({
   }),
   hooks: HooksConfigSchema.default({
     on_new_email: 'notify',
+    preset: 'priority-focus',
     auto_label: false,
     auto_flag: false,
     batch_delay: 5,
+    rules: [],
   }),
 });
 
@@ -97,9 +123,11 @@ export const AppConfigFileSchema = z.object({
     },
     hooks: {
       on_new_email: 'notify',
+      preset: 'priority-focus',
       auto_label: false,
       auto_flag: false,
       batch_delay: 5,
+      rules: [],
     },
   }),
   accounts: z.array(AccountConfigSchema).min(1, 'At least one account is required'),

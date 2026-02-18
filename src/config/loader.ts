@@ -8,7 +8,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { parse as parseTOML, stringify as stringifyTOML } from 'smol-toml';
-import type { AccountConfig, AppConfig, OAuth2Config } from '../types/index.js';
+import type { AccountConfig, AppConfig, HookRule, OAuth2Config } from '../types/index.js';
 import type { RawAccountConfig, RawAppConfig } from './schema.js';
 import { AppConfigFileSchema } from './schema.js';
 import { CONFIG_FILE, xdg } from './xdg.js';
@@ -57,9 +57,13 @@ function loadFromEnv(): RawAppConfig | null {
       hooks: {
         on_new_email:
           (process.env.MCP_EMAIL_HOOK_ON_NEW_EMAIL as 'triage' | 'notify' | 'none') ?? 'notify',
+        preset:
+          (process.env.MCP_EMAIL_HOOK_PRESET as 'inbox-zero' | 'gtd' | 'priority-focus' | 'notification-only' | 'custom') ?? 'priority-focus',
         auto_label: process.env.MCP_EMAIL_HOOK_AUTO_LABEL === 'true',
         auto_flag: process.env.MCP_EMAIL_HOOK_AUTO_FLAG === 'true',
         batch_delay: parseInt(process.env.MCP_EMAIL_HOOK_BATCH_DELAY ?? '5', 10),
+        custom_instructions: process.env.MCP_EMAIL_HOOK_CUSTOM_INSTRUCTIONS,
+        rules: [],
       },
     },
     accounts: [
@@ -154,6 +158,22 @@ function normalizeAccount(raw: RawAccountConfig): AccountConfig {
   };
 }
 
+function normalizeHookRule(raw: { name: string; match: Record<string, string | undefined>; actions: Record<string, unknown> }): HookRule {
+  return {
+    name: raw.name,
+    match: {
+      from: raw.match.from,
+      to: raw.match.to,
+      subject: raw.match.subject,
+    },
+    actions: {
+      labels: Array.isArray(raw.actions.labels) ? raw.actions.labels as string[] : undefined,
+      flag: typeof raw.actions.flag === 'boolean' ? raw.actions.flag : undefined,
+      markRead: typeof raw.actions.mark_read === 'boolean' ? raw.actions.mark_read : undefined,
+    },
+  };
+}
+
 function normalizeConfig(raw: RawAppConfig): AppConfig {
   return {
     settings: {
@@ -166,9 +186,13 @@ function normalizeConfig(raw: RawAppConfig): AppConfig {
       },
       hooks: {
         onNewEmail: raw.settings.hooks.on_new_email,
+        preset: raw.settings.hooks.preset,
         autoLabel: raw.settings.hooks.auto_label,
         autoFlag: raw.settings.hooks.auto_flag,
         batchDelay: raw.settings.hooks.batch_delay,
+        customInstructions: raw.settings.hooks.custom_instructions,
+        systemPrompt: raw.settings.hooks.system_prompt,
+        rules: (raw.settings.hooks.rules ?? []).map(normalizeHookRule),
       },
     },
     accounts: raw.accounts.map(normalizeAccount),
@@ -251,9 +275,23 @@ read_only = false  # set to true to disable all write operations
 
 # [settings.hooks]
 # on_new_email = "notify"  # "triage" (AI) | "notify" (log) | "none"
+# preset = "priority-focus" # "inbox-zero" | "gtd" | "priority-focus" | "notification-only" | "custom"
 # auto_label = false       # auto-apply AI-suggested labels
 # auto_flag = false        # auto-flag urgent emails
 # batch_delay = 5          # seconds to batch before processing
+# custom_instructions = "I'm a software engineer. Emails from @company.com are high priority."
+# system_prompt = ""       # full override (only when preset = "custom")
+
+# Static rules — run BEFORE AI triage, skip AI if matched
+# [[settings.hooks.rules]]
+# name = "GitHub Notifications"
+# match = { from = "*@github.com" }
+# actions = { labels = ["Dev"], mark_read = true }
+#
+# [[settings.hooks.rules]]
+# name = "Newsletter Archive"
+# match = { from = "*@substack.com" }
+# actions = { labels = ["Newsletter"] }
 
 [[accounts]]
 name = "personal"

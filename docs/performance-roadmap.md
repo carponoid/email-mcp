@@ -37,7 +37,7 @@ Performance for an Email MCP server operates across **three distinct layers**, e
 
 | Gap | Current Behavior | Impact |
 |-----|-----------------|--------|
-| No SMTP connection pooling | Creates transport per account, no `pool: true` | Medium — TLS+AUTH on every send |
+| Conservative SMTP pool defaults | Pooling defaults to `max_connections=1`, `max_messages=100` | Low — tune for high-throughput workloads |
 | No ENVELOPE/BODYSTRUCTURE cache | Fresh SEARCH + FETCH every request | High — repeat listings pay full IMAP cost |
 | Client-side pagination | Fetches ALL matching UIDs, slices in memory | High — 10K-mailbox fetches all UIDs just to show page 1 |
 | No IMAP command pipelining control | Relies on ImapFlow auto-pipelining (good) but fetches extra data | Low — ImapFlow handles this well already |
@@ -61,7 +61,7 @@ These improvements offer the best performance gains for minimal code changes.
 **Impact**: Medium | **Effort**: Trivial (1 line change)
 
 ```typescript
-// smtp.service.ts — when creating transport
+// connections/manager.ts — when creating transport
 const transport = nodemailer.createTransport({
   host, port, secure,
   auth: { user, pass },
@@ -73,7 +73,7 @@ const transport = nodemailer.createTransport({
 
 **What it does**: Reuses SMTP connections across sends. Eliminates TLS handshake + AUTH per message. Nodemailer handles queuing, recycling, and connection health automatically.
 
-**Current state**: Transport is reused (good) but without pooling — single connection per account, no concurrent sends.
+**Current state**: Transport pooling is enabled with conservative defaults and can be tuned per account.
 
 #### P1.2 — Server-Side UID Pagination (Replace Client-Side Slicing)
 

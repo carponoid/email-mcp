@@ -496,7 +496,23 @@ async function addAccount(): Promise<void> {
         accounts: [...existingConfig.accounts, newAccount],
       }
     : {
-        settings: { rate_limit: 10, read_only: false },
+        settings: {
+          rate_limit: 10,
+          read_only: false,
+          watcher: {
+            enabled: false,
+            folders: ['INBOX'],
+            idle_timeout: 1740,
+          },
+          hooks: {
+            on_new_email: 'notify',
+            preset: 'priority-focus',
+            auto_label: false,
+            auto_flag: false,
+            batch_delay: 5,
+            rules: [],
+          },
+        },
         accounts: [newAccount],
       };
 

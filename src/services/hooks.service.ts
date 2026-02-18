@@ -2,18 +2,20 @@
  * AI Hooks Service — intelligent email triage via MCP sampling.
  *
  * Listens for new email events on the event bus and:
- * - Batches arrivals within a configurable delay window
- * - Requests AI triage via `sampling/createMessage` if supported
+ * - Matches static rules FIRST (fast, free, deterministic)
+ * - Falls through to AI triage via `sampling/createMessage` if no rule matched
+ * - Uses preset system prompts + custom instructions for AI triage
  * - Auto-applies labels and flags based on AI response
  * - Falls back to logging if sampling is unavailable
  */
 
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { mcpLog } from '../logging.js';
-import type { EmailMeta, HooksConfig } from '../types/index.js';
+import type { EmailMeta, HookRule, HooksConfig } from '../types/index.js';
 import type { NewEmailEvent } from './event-bus.js';
 import eventBus from './event-bus.js';
 import type ImapService from './imap.service.js';
+import { buildSystemPrompt } from './presets.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,6 +32,40 @@ interface BatchEmail {
   account: string;
   mailbox: string;
   meta: EmailMeta;
+}
+
+interface RuleMatchResult {
+  matched: true;
+  rule: HookRule;
+}
+
+interface RuleNoMatch {
+  matched: false;
+}
+
+type StaticMatchOutcome = RuleMatchResult | RuleNoMatch;
+
+// ---------------------------------------------------------------------------
+// Pattern matching helpers
+// ---------------------------------------------------------------------------
+
+/** Convert a glob-like pattern (with `*` wildcards and `|` OR) to a RegExp. */
+function globToRegex(pattern: string): RegExp {
+  const parts = pattern.split('|').map((p) => p.trim()).filter(Boolean);
+  const regexParts = parts.map((part) => {
+    const escaped = part.replace(/[.+?^${}()[\]\\]/g, '\\$&');
+    return escaped.replace(/\*/g, '.*');
+  });
+  return new RegExp(`^(?:${regexParts.join('|')})$`, 'i');
+}
+
+/** Test whether a value matches a glob pattern (case-insensitive). */
+function matchesPattern(pattern: string, value: string): boolean {
+  try {
+    return globToRegex(pattern).test(value);
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -53,11 +89,17 @@ export default class HooksService {
 
   private rateResetTimer: ReturnType<typeof setInterval> | null = null;
 
+  private readonly resolvedSystemPrompt: string;
+
   private static readonly MAX_SAMPLING_PER_MIN = 10;
 
   constructor(config: HooksConfig, imapService: ImapService) {
     this.config = config;
     this.imapService = imapService;
+    this.resolvedSystemPrompt = buildSystemPrompt(config.preset, {
+      customInstructions: config.customInstructions,
+      systemPrompt: config.systemPrompt,
+    });
   }
 
   /**
@@ -79,10 +121,12 @@ export default class HooksService {
       this.rateCounter = 0;
     }, 60_000);
 
+    const ruleCount = this.config.rules.length;
     mcpLog(
       'info',
       'hooks',
-      `Hooks active: mode=${this.config.onNewEmail}, sampling=${this.samplingSupported ? 'yes' : 'no'}`,
+      `Hooks active: mode=${this.config.onNewEmail}, preset=${this.config.preset}, ` +
+        `rules=${ruleCount}, sampling=${this.samplingSupported ? 'yes' : 'no'}`,
     ).catch(() => {});
   }
 
@@ -124,11 +168,109 @@ export default class HooksService {
 
     await this.sendResourceUpdates(batch);
 
-    if (this.config.onNewEmail === 'triage' && this.samplingSupported) {
-      await this.triageBatch(batch);
-    } else {
-      await HooksService.notifyBatch(batch);
+    // Partition: static-rule-matched vs needs-AI-triage
+    const ruleMatched: { email: BatchEmail; rule: HookRule }[] = [];
+    const needsTriage: BatchEmail[] = [];
+
+    batch.forEach((email) => {
+      const outcome = HooksService.matchStaticRules(email, this.config.rules);
+      if (outcome.matched) {
+        ruleMatched.push({ email, rule: outcome.rule });
+      } else {
+        needsTriage.push(email);
+      }
+    });
+
+    // Apply static rule actions
+    if (ruleMatched.length > 0) {
+      const ruleOps = ruleMatched.map(async ({ email, rule }) => this.applyStaticRule(email, rule));
+      await Promise.allSettled(ruleOps);
     }
+
+    // AI triage for remaining emails
+    if (needsTriage.length > 0) {
+      if (this.config.onNewEmail === 'triage' && this.samplingSupported) {
+        await this.triageBatch(needsTriage);
+      } else {
+        await HooksService.notifyBatch(needsTriage);
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Static rule matching
+  // -------------------------------------------------------------------------
+
+  static matchStaticRules(email: BatchEmail, rules: HookRule[]): StaticMatchOutcome {
+    const matched = rules.find((rule) => HooksService.emailMatchesRule(email, rule));
+    return matched ? { matched: true, rule: matched } : { matched: false };
+  }
+
+  private static emailMatchesRule(email: BatchEmail, rule: HookRule): boolean {
+    const { match } = rule;
+    const fromAddr = email.meta.from.address;
+    const fromFull = email.meta.from.name
+      ? `${email.meta.from.name} <${fromAddr}>`
+      : fromAddr;
+    const toAddrs = email.meta.to.map((t) => t.address).join(', ');
+    const { subject } = email.meta;
+
+    // All specified match conditions must pass (AND logic)
+    if (match.from && !matchesPattern(match.from, fromAddr) && !matchesPattern(match.from, fromFull)) {
+      return false;
+    }
+    if (match.to && !matchesPattern(match.to, toAddrs)) {
+      return false;
+    }
+    if (match.subject && !matchesPattern(match.subject, subject)) {
+      return false;
+    }
+
+    // At least one match condition must be specified
+    return Boolean(match.from ?? match.to ?? match.subject);
+  }
+
+  private async applyStaticRule(email: BatchEmail, rule: HookRule): Promise<void> {
+    const { actions } = rule;
+
+    // Apply labels
+    if (actions.labels?.length) {
+      const labelOps = actions.labels.map(async (label) => {
+        try {
+          await this.imapService.addLabel(email.account, email.mailbox, email.meta.id, label);
+        } catch {
+          await mcpLog('warning', 'hooks', `Could not add label "${label}" to email ${email.meta.id}`);
+        }
+      });
+      await Promise.allSettled(labelOps);
+    }
+
+    // Apply flag
+    if (actions.flag) {
+      try {
+        await this.imapService.setFlags(email.account, email.mailbox, email.meta.id, 'flag');
+      } catch {
+        await mcpLog('warning', 'hooks', `Could not flag email ${email.meta.id}`);
+      }
+    }
+
+    // Mark read
+    if (actions.markRead) {
+      try {
+        await this.imapService.setFlags(email.account, email.mailbox, email.meta.id, 'read');
+      } catch {
+        await mcpLog('warning', 'hooks', `Could not mark email ${email.meta.id} as read`);
+      }
+    }
+
+    const labelStr = actions.labels?.length ? ` → labels: ${actions.labels.join(', ')}` : '';
+    const flagStr = actions.flag ? ' ⭐' : '';
+    const readStr = actions.markRead ? ' 👁️' : '';
+    await mcpLog(
+      'info',
+      'hooks',
+      `📋 Rule "${rule.name}" matched: "${email.meta.subject}" from ${email.meta.from.address}${flagStr}${readStr}${labelStr}`,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -161,7 +303,7 @@ export default class HooksService {
   }
 
   // -------------------------------------------------------------------------
-  // Triage mode (AI sampling)
+  // Triage mode (AI sampling with preset prompts)
   // -------------------------------------------------------------------------
 
   private async triageBatch(emails: BatchEmail[]): Promise<void> {
@@ -171,18 +313,26 @@ export default class HooksService {
       return;
     }
 
+    // Skip AI for notification-only preset
+    if (this.config.preset === 'notification-only' || !this.resolvedSystemPrompt) {
+      await HooksService.notifyBatch(emails);
+      return;
+    }
+
     this.rateCounter += 1;
 
     const emailSummaries = emails.map((e, i) => HooksService.formatEmailSummary(e, i)).join('\n\n');
-
-    const prompt = HooksService.buildTriagePrompt(emails.length, emailSummaries);
+    const userPrompt = `Analyze these ${emails.length} new email(s):\n\n${emailSummaries}`;
 
     try {
       const srv = this.lowLevelServer;
       if (!srv) throw new Error('Server not available');
 
       const result = await srv.createMessage({
-        messages: [{ role: 'user', content: { type: 'text', text: prompt } }],
+        messages: [
+          { role: 'user', content: { type: 'text', text: userPrompt } },
+        ],
+        systemPrompt: this.resolvedSystemPrompt,
         maxTokens: 1000,
         modelPreferences: {
           hints: [{ name: 'fast' }],
@@ -213,19 +363,6 @@ export default class HooksService {
       `    Subject: ${e.meta.subject}\n` +
       `    Date: ${e.meta.date}\n` +
       `    Flags: ${flagIcons}`
-    );
-  }
-
-  private static buildTriagePrompt(count: number, summaries: string): string {
-    return (
-      `You are an email triage assistant. Analyze these ${count} new email(s) and respond with a JSON array ` +
-      `(one object per email, in order). Each object should have:\n` +
-      `- "priority": "urgent" | "high" | "normal" | "low"\n` +
-      `- "labels": string[] (suggested labels, e.g. ["Meeting", "Finance"])\n` +
-      `- "flag": boolean (true if urgent/important)\n` +
-      `- "action": string (brief description of suggested action)\n\n` +
-      `Emails:\n${summaries}\n\n` +
-      `Respond ONLY with the JSON array, no markdown or extra text.`
     );
   }
 
@@ -280,7 +417,7 @@ export default class HooksService {
   // Response parsing
   // -------------------------------------------------------------------------
 
-  private static parseTriageResponse(text: string, expectedCount: number): TriageResult[] {
+  static parseTriageResponse(text: string, expectedCount: number): TriageResult[] {
     try {
       const cleaned = text.replace(/```(?:json)?\n?/g, '').trim();
       const parsed = JSON.parse(cleaned) as unknown;
@@ -297,7 +434,7 @@ export default class HooksService {
     return Array.from({ length: expectedCount }, () => ({}));
   }
 
-  private static sanitizeTriageResult(raw: unknown): TriageResult {
+  static sanitizeTriageResult(raw: unknown): TriageResult {
     if (typeof raw !== 'object' || raw === null) return {};
     const obj = raw as Record<string, unknown>;
     return {
