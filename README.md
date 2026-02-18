@@ -2,13 +2,34 @@
 
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
 [![license](https://img.shields.io/github/license/codefuturist/email-mcp.svg?style=flat-square)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/@codefuturist/email-mcp.svg?style=flat-square)](https://www.npmjs.com/package/@codefuturist/email-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/@codefuturist/email-mcp.svg?style=flat-square)](https://www.npmjs.com/package/@codefuturist/email-mcp)
+[![CI](https://img.shields.io/github/actions/workflow/status/codefuturist/email-mcp/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/codefuturist/email-mcp/actions/workflows/ci.yml)
 
 An MCP (Model Context Protocol) server providing comprehensive email capabilities via IMAP and SMTP.
 
 Enables AI assistants to read, search, send, manage, schedule, and analyze emails across multiple accounts. Exposes 42 tools, 7 prompts, and 6 resources over the MCP protocol with OAuth2 support _(experimental)_, email scheduling, calendar extraction, analytics, provider-aware label management, real-time IMAP IDLE watcher with AI-powered triage, customizable presets and static rules, and a guided setup wizard.
 
+## Highlights
+
+| Feature | email-mcp | Typical MCP email |
+|---------|:---------:|:-----------------:|
+| Multi-account | ✅ | ❌ |
+| Send / reply / forward | ✅ | ✅ |
+| Drafts & templates | ✅ | ❌ |
+| Labels & bulk ops | ✅ provider-aware | ❌ |
+| Schedule future emails | ✅ | ❌ |
+| Real-time IMAP IDLE watcher | ✅ | ❌ |
+| AI triage with presets | ✅ | ❌ |
+| Desktop & webhook alerts | ✅ | ❌ |
+| Calendar (ICS) extraction | ✅ | ❌ |
+| Email analytics | ✅ | ❌ |
+| OAuth2 (Gmail / M365) | ✅ _experimental_ | ❌ |
+| Guided setup wizard | ✅ auto-detect | ❌ |
+
 ## Table of Contents
 
+- [Highlights](#highlights)
 - [Security](#security)
 - [Background](#background)
 - [Install](#install)
@@ -39,7 +60,7 @@ Key design decisions:
 
 ## Install
 
-Requires Node.js ≥ 20.
+Requires Node.js ≥ 22.
 
 ```bash
 # Run directly (no install needed)
@@ -79,40 +100,92 @@ email-mcp test personal   # specific account
 
 ### Configure Your MCP Client
 
-Using npx:
+**Recommended — use the guided installer** (auto-detects Claude Desktop, VS Code, Cursor, Windsurf):
+
+```bash
+email-mcp install
+```
+
+Or add manually using the snippets below.
+
+<details>
+<summary><strong>Claude Desktop</strong></summary>
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
   "mcpServers": {
     "email": {
       "command": "npx",
-      "args": ["@codefuturist/email-mcp", "stdio"]
+      "args": ["-y", "@codefuturist/email-mcp", "stdio"]
     }
   }
 }
 ```
+</details>
 
-Or using pnpm:
+<details>
+<summary><strong>VS Code (GitHub Copilot)</strong></summary>
+
+Add to `.vscode/mcp.json` in your workspace, or User `settings.json` under the `mcp` key:
 
 ```json
 {
-  "mcpServers": {
+  "servers": {
     "email": {
-      "command": "pnpm",
-      "args": ["dlx", "@codefuturist/email-mcp", "stdio"]
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@codefuturist/email-mcp", "stdio"]
     }
   }
 }
 ```
+</details>
 
-For single-account setups without a config file, use environment variables:
+<details>
+<summary><strong>Cursor</strong></summary>
+
+Edit `~/.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "email": {
       "command": "npx",
-      "args": ["@codefuturist/email-mcp", "stdio"],
+      "args": ["-y", "@codefuturist/email-mcp", "stdio"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>Windsurf</strong></summary>
+
+Edit `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "email": {
+      "command": "npx",
+      "args": ["-y", "@codefuturist/email-mcp", "stdio"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>Single-account via environment variables (no config file needed)</strong></summary>
+
+```json
+{
+  "mcpServers": {
+    "email": {
+      "command": "npx",
+      "args": ["-y", "@codefuturist/email-mcp", "stdio"],
       "env": {
         "MCP_EMAIL_ADDRESS": "you@gmail.com",
         "MCP_EMAIL_PASSWORD": "your-app-password",
@@ -123,6 +196,7 @@ For single-account setups without a config file, use environment variables:
   }
 }
 ```
+</details>
 
 ### CLI Commands
 

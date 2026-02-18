@@ -35,9 +35,18 @@
     "mcp",
     "imap",
     "smtp",
-    "model-context-protocol"
+    "model-context-protocol",
+    "mcp-server",
+    "claude",
+    "anthropic",
+    "ai-tools",
+    "llm",
+    "nodejs"
   ],
-  "author": "Colin",
+  "author": {
+    "name": "codefuturist",
+    "url": "https://github.com/codefuturist"
+  },
   "license": "LGPL-3.0-or-later",
   "repository": {
     "type": "git",
@@ -64,6 +73,7 @@
     "eslint": "^9.39.2",
     "@biomejs/biome": "^2.4.0",
     "eslint-config-airbnb-extended": "^3.0.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
   "engines": {
