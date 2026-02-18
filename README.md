@@ -43,10 +43,10 @@ Requires Node.js ≥ 20.
 
 ```bash
 # Run directly with npx (no install needed)
-npx email-mcp setup
+npx @codefuturist/email-mcp setup
 
 # Or install globally
-npm install -g email-mcp
+npm install -g @codefuturist/email-mcp
 ```
 
 ## Usage
@@ -77,7 +77,7 @@ email-mcp test personal   # specific account
   "mcpServers": {
     "email": {
       "command": "npx",
-      "args": ["email-mcp", "stdio"]
+      "args": ["@codefuturist/email-mcp", "stdio"]
     }
   }
 }
@@ -90,7 +90,7 @@ For single-account setups without a config file, use environment variables:
   "mcpServers": {
     "email": {
       "command": "npx",
-      "args": ["email-mcp", "stdio"],
+      "args": ["@codefuturist/email-mcp", "stdio"],
       "env": {
         "MCP_EMAIL_ADDRESS": "you@gmail.com",
         "MCP_EMAIL_PASSWORD": "your-app-password",
