@@ -74,6 +74,21 @@ npm install -g @codefuturist/email-mcp
 pnpm add -g @codefuturist/email-mcp
 ```
 
+### Docker
+
+No Node.js required — just Docker.
+
+```bash
+# Build from source
+docker build -t codefuturist/email-mcp .
+
+# Or use Docker Compose
+docker compose build
+```
+
+> **Note:** The server uses stdio transport. Config must be created on the host first
+> (via `npx @codefuturist/email-mcp setup` or manually) and mounted into the container.
+
 ## Usage
 
 ### Setup
@@ -171,6 +186,35 @@ Edit `~/.codeium/windsurf/mcp_config.json`:
     "email": {
       "command": "npx",
       "args": ["-y", "@codefuturist/email-mcp", "stdio"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>Docker (any MCP client)</strong></summary>
+
+Run the server in a container — mount your config directory read-only:
+
+```bash
+docker run --rm -i \
+  -v ~/.config/email-mcp:/home/node/.config/email-mcp:ro \
+  codefuturist/email-mcp
+```
+
+For MCP client configuration (e.g. Claude Desktop):
+
+```json
+{
+  "mcpServers": {
+    "email": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "-v", "~/.config/email-mcp:/home/node/.config/email-mcp:ro",
+        "codefuturist/email-mcp"
+      ]
     }
   }
 }

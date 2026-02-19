@@ -13,8 +13,22 @@
       "identifier": "@codefuturist/email-mcp",
       "version": "0.2.0",
       "runtimeHint": "npx",
+      "commandArguments": ["stdio"],
+      "transport": {
+        "type": "stdio"
+      }
+    },
+    {
+      "registryType": "docker",
+      "identifier": "codefuturist/email-mcp",
+      "version": "0.2.0",
       "commandArguments": [
-        "stdio"
+        "run",
+        "--rm",
+        "-i",
+        "-v",
+        "~/.config/email-mcp:/home/node/.config/email-mcp:ro",
+        "codefuturist/email-mcp"
       ],
       "transport": {
         "type": "stdio"
