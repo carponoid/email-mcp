@@ -41,9 +41,11 @@
     "docker:build": "docker build -t codefuturist/email-mcp .",
     "docker:run": "docker run --rm -i -v ~/.config/email-mcp:/home/node/.config/email-mcp:ro codefuturist/email-mcp",
     "docker:compose": "docker compose up",
+    "docker:clean": "docker images --format '{{.Repository}}:{{.Tag}}' | grep email-mcp | xargs docker rmi -f 2>/dev/null; true",
+    "docker:prune": "docker image prune -f && docker buildx prune -f",
     "release:check": "goreleaser check",
-    "release:snapshot": "goreleaser release --snapshot --clean",
-    "release:dry-run": "goreleaser release --skip=publish --clean",
+    "release:snapshot": "goreleaser release --snapshot --clean && pnpm docker:clean",
+    "release:dry-run": "goreleaser release --skip=publish --clean && pnpm docker:clean",
     "prepublishOnly": "tsc -p tsconfig.build.json"
   },
   "keywords": [

@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch: # Allow manual trigger
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -63,7 +64,7 @@ jobs:
 
       - name: Upload test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: integration-reports
           path: reports/integration-*
