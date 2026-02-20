@@ -249,6 +249,34 @@ Edit `~/.config/zed/settings.json`:
 </details>
 
 <details>
+<summary><strong>Mistral Vibe</strong></summary>
+
+Add to `~/.vibe/config.toml`:
+
+```toml
+[[mcp_servers]]
+name = "email-mcp"
+transport = "stdio"
+command = "npx"
+args = ["-y", "@codefuturist/email-mcp", "stdio"]
+```
+
+To pass credentials directly instead of using a config file, use the `env` field:
+
+```toml
+[[mcp_servers]]
+name = "email-mcp"
+transport = "stdio"
+command = "npx"
+args = ["-y", "@codefuturist/email-mcp", "stdio"]
+env = { "EMAIL_ACCOUNTS" = "<your-accounts-json>" }
+```
+
+MCP tools are exposed as `email-mcp_<tool_name>` (e.g. `email-mcp_list_emails`). Restart Vibe after editing the config.
+
+</details>
+
+<details>
 <summary><strong>Docker (any MCP client)</strong></summary>
 
 Run the server in a container — mount your config directory read-only:
