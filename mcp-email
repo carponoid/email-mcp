@@ -90,7 +90,8 @@ cmd_test() {
     _info "Running email-mcp connection tests ..."
     _ensure_config
     # Run test on the host using the local dist/ (no container needed)
-    node "$SCRIPT_DIR/dist/main.js" test
+    # XDG_CONFIG_HOME points to /ai/mcp-email so email-mcp reads /ai/mcp-email/config/config.toml
+    XDG_CONFIG_HOME="$AI_ROOT" node "$SCRIPT_DIR/dist/main.js" test
 }
 
 cmd_setup() {
