@@ -1,0 +1,60 @@
+# ── Build stage ───────────────────────────────────────────────────────────────
+FROM node:24-slim AS builder
+
+WORKDIR /app
+
+# Enable pnpm via corepack
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+# Install dependencies (layer cached unless lock changes)
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+# Build TypeScript
+COPY tsconfig.json tsconfig.build.json ./
+COPY src/ src/
+RUN pnpm build
+
+# Remove dev dependencies
+RUN pnpm prune --prod
+
+# ── Production stage ──────────────────────────────────────────────────────────
+FROM node:24-slim AS production
+
+LABEL org.opencontainers.image.title="mcp-email" \
+      org.opencontainers.image.description="Email MCP server — READ+DRAFT ONLY security fork of codefuturist/email-mcp" \
+      org.opencontainers.image.source="https://github.com/carponoid/email-mcp" \
+      org.opencontainers.image.licenses="LGPL-3.0-or-later"
+
+WORKDIR /app
+
+# Install Python + uv so mcp-proxy can run inside the container
+# mcp-proxy bridges:  SSE (agents) ←→ stdio (node dist/main.js)
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+        python3 python3-pip curl ca-certificates \
+    && pip install --no-cache-dir uv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only production artifacts from builder
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
+
+# Copy entrypoint
+COPY containers/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Create config dirs:
+#   /etc/mcp-email/        ← host-mounted at /ai/mcp-email/config/ (read-only)
+#   /var/log/mcp-email/    ← host-mounted at /ai/mcp-email/logs/
+RUN mkdir -p /etc/mcp-email /var/log/mcp-email \
+    && chown -R node:node /etc/mcp-email /var/log/mcp-email
+
+ENV NODE_ENV=production
+# XDG_CONFIG_HOME=/etc/mcp-email → email-mcp reads /etc/mcp-email/email-mcp/config.toml
+# Host path: /ai/mcp-email/config/ is mounted at /etc/mcp-email/email-mcp (read-only)
+ENV XDG_CONFIG_HOME=/etc/mcp-email
+
+USER node
+
+ENTRYPOINT ["/entrypoint.sh"]

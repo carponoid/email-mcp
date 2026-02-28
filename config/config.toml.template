@@ -1,0 +1,117 @@
+# Email MCP Gateway — Account Configuration Template
+#
+# Copy this file to /ai/mcp-email/config/config.toml and fill in your real credentials.
+# This file is mounted read-only into the container at /etc/mcp-email/email-mcp/config.toml
+#
+# SECURITY: This file contains passwords/tokens. Never commit it to git.
+# The template (this file) is committed; the real config lives on the host only.
+#
+# For help: run `mcp-email setup` for an interactive wizard that auto-detects
+# IMAP/SMTP settings for Gmail, Outlook, Yahoo, iCloud, Fastmail, ProtonMail, etc.
+
+[settings]
+# Belt-and-suspenders: this server is a read+draft-only fork at the code level,
+# but keep this true as an additional layer of protection.
+read_only = true
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ACCOUNT EXAMPLE 1: Gmail with App Password
+# ──────────────────────────────────────────────────────────────────────────────
+# Prerequisites:
+#   1. Enable 2-Step Verification on your Google account
+#   2. Generate an App Password: myaccount.google.com/apppasswords
+#      (Select app: "Mail", device: "Other" → name it "AIStack")
+#   3. Use the 16-char app password below (not your real password)
+#
+# [[accounts]]
+# name       = "gmail-personal"      # Short identifier used in MCP tool calls
+# email      = "you@gmail.com"
+# full_name  = "Your Name"
+# password   = "xxxx xxxx xxxx xxxx"  # 16-char Gmail App Password (spaces OK)
+#
+# [accounts.imap]
+# host = "imap.gmail.com"
+# port = 993
+# tls  = true
+#
+# [accounts.smtp]
+# host = "smtp.gmail.com"
+# port = 465
+# tls  = true
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ACCOUNT EXAMPLE 2: Outlook / Hotmail / Microsoft 365 with App Password
+# ──────────────────────────────────────────────────────────────────────────────
+# Prerequisites:
+#   - For personal Outlook/Hotmail: enable 2FA, generate App Password at
+#     account.microsoft.com/security → Advanced security → App passwords
+#   - For Microsoft 365 work accounts: admin may need to allow App Passwords
+#     OR use OAuth2 (see Example 4 below)
+#
+# [[accounts]]
+# name       = "outlook-work"
+# email      = "you@outlook.com"
+# full_name  = "Your Name"
+# password   = "your-app-password-here"
+#
+# [accounts.imap]
+# host = "outlook.office365.com"
+# port = 993
+# tls  = true
+#
+# [accounts.smtp]
+# host = "smtp-mail.outlook.com"
+# port = 587
+# tls      = false
+# starttls = true
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ACCOUNT EXAMPLE 3: Generic IMAP (FastMail, ProtonMail Bridge, self-hosted, etc.)
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# [[accounts]]
+# name       = "fastmail"
+# email      = "you@fastmail.com"
+# full_name  = "Your Name"
+# password   = "your-fastmail-app-password"
+#
+# [accounts.imap]
+# host = "imap.fastmail.com"
+# port = 993
+# tls  = true
+#
+# [accounts.smtp]
+# host = "smtp.fastmail.com"
+# port = 465
+# tls  = true
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ACCOUNT EXAMPLE 4: Gmail with OAuth2 (no App Password needed)
+# ──────────────────────────────────────────────────────────────────────────────
+# Requires a Google Cloud OAuth2 app. More setup, but no need for App Passwords.
+# See: https://github.com/codefuturist/email-mcp#oauth2
+#
+# [[accounts]]
+# name      = "gmail-oauth"
+# email     = "you@gmail.com"
+# full_name = "Your Name"
+#
+# [accounts.imap]
+# host = "imap.gmail.com"
+# port = 993
+# tls  = true
+#
+# [accounts.smtp]
+# host = "smtp.gmail.com"
+# port = 465
+# tls  = true
+#
+# [accounts.oauth2]
+# provider      = "google"
+# client_id     = "your-client-id.apps.googleusercontent.com"
+# client_secret = "your-client-secret"
+# refresh_token = "your-refresh-token"

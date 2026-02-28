@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# mcp-email — Management script for the mcp-email Podman pod
+#
+# Usage:
+#   mcp-email start       Build image (if needed) and start the pod
+#   mcp-email stop        Stop the pod
+#   mcp-email restart     Stop + start
+#   mcp-email status      Show pod and container status
+#   mcp-email logs        Follow container logs
+#   mcp-email build       (Re)build the container image
+#   mcp-email test        Run email-mcp connection tests against current config
+#   mcp-email setup       Interactive account setup wizard (runs on host, not in container)
+#   mcp-email shell       Open a shell in the gateway container
+#   mcp-email install     Install ~/bin/mcp-email symlink
+#
+# Install as ~/bin/mcp-email:
+#   ln -sf "$(pwd)/mcp/email-mcp/mcp-email" ~/bin/mcp-email
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+POD_NAME="mcp-email"
+IMAGE_NAME="localhost/mcp-gateway-email:latest"
+CONTAINERFILE="$SCRIPT_DIR/containers/Containerfile"
+POD_YAML="$SCRIPT_DIR/containers/pod.yaml"
+AI_ROOT="/ai/mcp-email"
+CONFIG_FILE="$AI_ROOT/config/config.toml"
+CONFIG_TEMPLATE="$SCRIPT_DIR/config/config.toml.template"
+
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+
+_info()  { echo -e "${GREEN}[mcp-email]${NC} $*"; }
+_warn()  { echo -e "${YELLOW}[mcp-email]${NC} $*"; }
+_error() { echo -e "${RED}[mcp-email]${NC} $*" >&2; }
+
+cmd_build() {
+    _info "Building $IMAGE_NAME from $CONTAINERFILE ..."
+    # Build context is the email-mcp fork root (needs src/, package.json, etc.)
+    podman build \
+        -t "$IMAGE_NAME" \
+        -f "$CONTAINERFILE" \
+        "$SCRIPT_DIR"
+    _info "Build complete: $IMAGE_NAME"
+}
+
+cmd_start() {
+    _ensure_host_dirs
+    _ensure_config
+
+    if ! podman image exists "$IMAGE_NAME"; then
+        _warn "Image $IMAGE_NAME not found — building first..."
+        cmd_build
+    fi
+
+    _info "Starting pod $POD_NAME ..."
+    podman pod rm "$POD_NAME" --force --ignore 2>/dev/null || true
+    podman play kube "$POD_YAML"
+    _info "Pod $POD_NAME started. SSE endpoint: http://localhost:24268/sse"
+}
+
+cmd_stop() {
+    _info "Stopping pod $POD_NAME ..."
+    podman pod stop "$POD_NAME" --ignore
+    podman pod rm   "$POD_NAME" --force --ignore
+    _info "Pod $POD_NAME stopped."
+}
+
+cmd_restart() {
+    cmd_stop
+    sleep 2
+    cmd_start
+}
+
+cmd_status() {
+    echo "=== Pod ==="
+    podman pod ps --filter "name=$POD_NAME" || true
+    echo ""
+    echo "=== Containers ==="
+    podman ps -a --filter "pod=$POD_NAME" || true
+    echo ""
+    echo "=== Recent logs ==="
+    podman pod logs "$POD_NAME" --tail 20 2>/dev/null || true
+}
+
+cmd_logs() {
+    podman pod logs -f "$POD_NAME"
+}
+
+cmd_test() {
+    _info "Running email-mcp connection tests ..."
+    _ensure_config
+    # Run test on the host using the local dist/ (no container needed)
+    node "$SCRIPT_DIR/dist/main.js" test
+}
+
+cmd_setup() {
+    _info "Running email-mcp interactive setup wizard ..."
+    _info "Config will be written to: $CONFIG_FILE"
+    mkdir -p "$AI_ROOT/config"
+    # Run wizard locally — it reads XDG_CONFIG_HOME to know where to save
+    XDG_CONFIG_HOME="$AI_ROOT" node "$SCRIPT_DIR/dist/main.js" account add
+    _info "Account added. Config saved to $CONFIG_FILE"
+    _info "Run 'mcp-email test' to verify, then 'mcp-email start' to deploy."
+}
+
+cmd_shell() {
+    _info "Opening shell in $POD_NAME-gateway ..."
+    podman exec -it "${POD_NAME}-gateway" /bin/sh
+}
+
+cmd_install() {
+    local target="$HOME/bin/mcp-email"
+    mkdir -p "$HOME/bin"
+    ln -sf "$SCRIPT_DIR/mcp-email" "$target"
+    _info "Installed symlink: $target → $SCRIPT_DIR/mcp-email"
+    _info "Make sure ~/bin is in your PATH."
+}
+
+_ensure_host_dirs() {
+    mkdir -p "$AI_ROOT/config" "$AI_ROOT/logs"
+    _info "Host dirs ready: $AI_ROOT/{config,logs}"
+}
+
+_ensure_config() {
+    if [ ! -f "$CONFIG_FILE" ]; then
+        _warn "Config not found: $CONFIG_FILE"
+        _warn "Copy the template and fill in your credentials:"
+        _warn "  cp $CONFIG_TEMPLATE $CONFIG_FILE"
+        _warn "  \$EDITOR $CONFIG_FILE"
+        _warn "Or run: mcp-email setup  (interactive wizard)"
+        exit 1
+    fi
+}
+
+# ── Dispatch ────────────────────────────────────────────────────────────────
+
+case "${1:-help}" in
+    build)    cmd_build    ;;
+    start)    cmd_start    ;;
+    stop)     cmd_stop     ;;
+    restart)  cmd_restart  ;;
+    status)   cmd_status   ;;
+    logs)     cmd_logs     ;;
+    test)     cmd_test     ;;
+    setup)    cmd_setup    ;;
+    shell)    cmd_shell    ;;
+    install)  cmd_install  ;;
+    help|--help|-h)
+        echo "Usage: mcp-email <command>"
+        echo ""
+        echo "Commands:"
+        echo "  build     (Re)build the container image"
+        echo "  start     Start the pod (builds if image missing)"
+        echo "  stop      Stop and remove the pod"
+        echo "  restart   stop + start"
+        echo "  status    Show pod/container status and recent logs"
+        echo "  logs      Follow live logs"
+        echo "  test      Test IMAP connections (runs on host)"
+        echo "  setup     Interactive account wizard (runs on host)"
+        echo "  shell     Shell into the running container"
+        echo "  install   Create ~/bin/mcp-email symlink"
+        ;;
+    *)
+        _error "Unknown command: ${1}"
+        echo "Run 'mcp-email help' for usage."
+        exit 1
+        ;;
+esac
