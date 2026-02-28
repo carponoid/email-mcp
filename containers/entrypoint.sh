@@ -39,10 +39,12 @@ echo "[entrypoint] Config found: $CONFIG_TOML"
 echo "[entrypoint] XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
 
 # Start mcp-proxy: bridges SSE (agents) → stdio (email-mcp node process)
-# --sse-port    : port for the SSE server that agents connect to
-# --              : separator before the child command
+# --pass-environment : pass all env vars (incl. XDG_CONFIG_HOME) to the node subprocess
+# --host / --port    : SSE server that agents connect to
+# --                 : separator before the child command
 # node dist/main.js stdio : the email-mcp server in stdio mode
 exec uvx mcp-proxy \
+    --pass-environment \
     --host "0.0.0.0" \
     --port "$PORT" \
     -- \
