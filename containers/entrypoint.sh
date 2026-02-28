@@ -43,6 +43,10 @@ echo "[entrypoint] XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
 # --host / --port    : SSE server that agents connect to
 # --                 : separator before the child command
 # node dist/main.js stdio : the email-mcp server in stdio mode
+#
+# NODE_OPTIONS: prefer IPv4 and disable happy-eyeballs — host IPv6 routes to Google are unreachable
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--dns-result-order=ipv4first --no-network-family-autoselection"
+
 exec uvx mcp-proxy \
     --pass-environment \
     --host "0.0.0.0" \

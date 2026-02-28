@@ -91,7 +91,8 @@ cmd_test() {
     _ensure_config
     # Run test on the host using the local dist/ (no container needed)
     # XDG_CONFIG_HOME points to /ai/mcp-email so email-mcp reads /ai/mcp-email/config/config.toml
-    XDG_CONFIG_HOME="$AI_ROOT" node "$SCRIPT_DIR/dist/main.js" test
+    # NODE_OPTIONS: prefer IPv4 and disable happy-eyeballs — host IPv6 routes to Google are unreachable
+    XDG_CONFIG_HOME="$AI_ROOT" NODE_OPTIONS="--dns-result-order=ipv4first --no-network-family-autoselection" node "$SCRIPT_DIR/dist/main.js" test
 }
 
 cmd_setup() {
