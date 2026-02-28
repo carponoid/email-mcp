@@ -1,5 +1,10 @@
 /**
- * MCP tools: save_draft, send_draft
+ * MCP tools: save_draft
+ *
+ * NOTE (carponoid fork): send_draft has been permanently removed.
+ * This server operates in read+draft-only mode. Sending email via MCP
+ * is intentionally disabled for security. Drafts can be saved for human
+ * review and sent manually via a proper email client.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -7,13 +12,13 @@ import { z } from 'zod';
 import audit from '../safety/audit.js';
 
 import type ImapService from '../services/imap.service.js';
-import type SmtpService from '../services/smtp.service.js';
 
-export default function registerDraftTools(
-  server: McpServer,
-  imapService: ImapService,
-  smtpService: SmtpService,
-): void {
+// SmtpService is intentionally NOT imported — no send path exists in this fork.
+
+/**
+ * Registers only the save_draft tool. Sending drafts is not available.
+ */
+export default function registerDraftTools(server: McpServer, imapService: ImapService): void {
   // ---------------------------------------------------------------------------
   // save_draft
   // ---------------------------------------------------------------------------
@@ -71,46 +76,10 @@ export default function registerDraftTools(
       }
     },
   );
-
-  // ---------------------------------------------------------------------------
-  // send_draft
-  // ---------------------------------------------------------------------------
-  server.tool(
-    'send_draft',
-    'Send an existing draft email and remove it from Drafts. The draft is fetched, sent via SMTP, then deleted. Use list_emails with the Drafts mailbox to find draft IDs.',
-    {
-      account: z.string().describe('Account name from list_accounts'),
-      id: z.number().int().describe('Draft email UID (from list_emails on Drafts mailbox)'),
-      mailbox: z.string().optional().describe('Drafts folder path (auto-detected if omitted)'),
-    },
-    { readOnlyHint: false, destructiveHint: true },
-    async ({ account, id, mailbox }) => {
-      try {
-        const result = await smtpService.sendDraft(account, id, mailbox);
-
-        await audit.log('send_draft', account, { id, mailbox }, 'ok');
-
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `✅ Draft sent (Message-ID: ${result.messageId}). Draft removed from folder.`,
-            },
-          ],
-        };
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        await audit.log('send_draft', account, { id, mailbox }, 'error', errMsg);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text' as const,
-              text: `Failed to send draft: ${errMsg}`,
-            },
-          ],
-        };
-      }
-    },
-  );
 }
+
+/**
+ * send_draft is permanently disabled in this fork.
+ * Drafts can be saved and must be sent manually via a real email client.
+ */
+// send_draft intentionally omitted — no send path exists in this fork.

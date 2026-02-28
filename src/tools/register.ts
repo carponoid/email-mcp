@@ -1,8 +1,10 @@
 /**
  * Tool registration — single wiring point.
  *
- * Registers all MCP tools with the server instance.
- * In read-only mode, write tools are not registered at all.
+ * carponoid/email-mcp security fork:
+ * This server is READ + DRAFT ONLY.
+ * send_email, reply_email, forward_email, and send_draft are permanently removed.
+ * save_draft is always registered so the AI can compose drafts for human review.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -23,7 +25,7 @@ import registerAttachmentTools from './attachments.tool.js';
 import registerBulkTools from './bulk.tool.js';
 import registerCalendarTools from './calendar.tool.js';
 import registerContactsTools from './contacts.tool.js';
-import registerDraftTools from './drafts.tool.js';
+import registerDraftTools from './drafts.tool.js'; // = registerSaveDraftTool (send_draft removed)
 import registerEmailsTools from './emails.tool.js';
 import registerFolderTools from './folders.tool.js';
 import registerHealthTools from './health.tool.js';
@@ -32,7 +34,7 @@ import registerLocateTools from './locate.tool.js';
 import registerMailboxesTools from './mailboxes.tool.js';
 import registerManageTools from './manage.tool.js';
 import registerSchedulerTools from './scheduler.tool.js';
-import registerSendTools from './send.tool.js';
+import registerSendTools from './send.tool.js'; // stub — registers nothing
 import { registerTemplateReadTools, registerTemplateWriteTools } from './templates.tool.js';
 import registerThreadTools from './thread.tool.js';
 import registerWatcherTools from './watcher.tool.js';
@@ -73,13 +75,18 @@ export default function registerAllTools(
   registerLocateTools(server, imapService);
   registerWatcherTools(server, watcherService, hooksService);
 
-  // Write tools — skipped in read-only mode
+  // save_draft — always registered (read+draft mode, no send path)
+  // AI can compose drafts; a human must send them via a real email client.
+  registerDraftTools(server, imapService);
+
+  // send.tool stub — registers NOTHING (send_email/reply_email/forward_email are gone)
+  registerSendTools(server, smtpService);
+
+  // Non-send write tools — still gated by readOnly for extra safety
   if (!readOnly) {
-    registerSendTools(server, smtpService);
     registerManageTools(server, imapService);
     registerLabelTools(server, imapService);
     registerBulkTools(server, imapService);
-    registerDraftTools(server, imapService, smtpService);
     registerFolderTools(server, imapService);
     registerTemplateWriteTools(server, templateService, imapService, smtpService);
     registerSchedulerTools(server, schedulerService);

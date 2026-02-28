@@ -8,6 +8,7 @@ vi.mock('./attachments.tool.js', () => ({ default: vi.fn() }));
 vi.mock('./bulk.tool.js', () => ({ default: vi.fn() }));
 vi.mock('./calendar.tool.js', () => ({ default: vi.fn() }));
 vi.mock('./contacts.tool.js', () => ({ default: vi.fn() }));
+// drafts: default export is registerSaveDraftTool (always registered)
 vi.mock('./drafts.tool.js', () => ({ default: vi.fn() }));
 vi.mock('./emails.tool.js', () => ({ default: vi.fn() }));
 vi.mock('./folders.tool.js', () => ({ default: vi.fn() }));
@@ -17,6 +18,7 @@ vi.mock('./locate.tool.js', () => ({ default: vi.fn() }));
 vi.mock('./mailboxes.tool.js', () => ({ default: vi.fn() }));
 vi.mock('./manage.tool.js', () => ({ default: vi.fn() }));
 vi.mock('./scheduler.tool.js', () => ({ default: vi.fn() }));
+// send: stub that registers nothing — still called, still a no-op
 vi.mock('./send.tool.js', () => ({ default: vi.fn() }));
 vi.mock('./templates.tool.js', () => ({
   registerTemplateReadTools: vi.fn(),
@@ -27,13 +29,13 @@ vi.mock('./watcher.tool.js', () => ({ default: vi.fn() }));
 
 import registerAccountsTools from './accounts.tool.js';
 import registerBulkTools from './bulk.tool.js';
-import registerDraftTools from './drafts.tool.js';
+import registerDraftTools from './drafts.tool.js'; // save_draft only (send_draft removed)
 import registerEmailsTools from './emails.tool.js';
 import registerFolderTools from './folders.tool.js';
 import registerLabelTools from './label.tool.js';
 import registerManageTools from './manage.tool.js';
 import registerSchedulerTools from './scheduler.tool.js';
-import registerSendTools from './send.tool.js';
+import registerSendTools from './send.tool.js'; // no-op stub
 import { registerTemplateWriteTools } from './templates.tool.js';
 
 function createConfig(readOnly: boolean): AppConfig {
@@ -85,12 +87,14 @@ describe('registerAllTools', () => {
     // Read tools should always be registered
     expect(registerAccountsTools).toHaveBeenCalled();
     expect(registerEmailsTools).toHaveBeenCalled();
-    // Write tools should be registered when NOT read-only
+    // save_draft is always registered (read+draft mode)
+    expect(registerDraftTools).toHaveBeenCalled();
+    // send stub is always called (but registers nothing)
     expect(registerSendTools).toHaveBeenCalled();
+    // Non-send write tools should be registered when NOT read-only
     expect(registerManageTools).toHaveBeenCalled();
     expect(registerLabelTools).toHaveBeenCalled();
     expect(registerBulkTools).toHaveBeenCalled();
-    expect(registerDraftTools).toHaveBeenCalled();
     expect(registerFolderTools).toHaveBeenCalled();
     expect(registerTemplateWriteTools).toHaveBeenCalled();
     expect(registerSchedulerTools).toHaveBeenCalled();
@@ -114,12 +118,14 @@ describe('registerAllTools', () => {
     // Read tools should still be registered
     expect(registerAccountsTools).toHaveBeenCalled();
     expect(registerEmailsTools).toHaveBeenCalled();
-    // Write tools should NOT be registered
-    expect(registerSendTools).not.toHaveBeenCalled();
+    // save_draft is always registered even in readOnly mode
+    expect(registerDraftTools).toHaveBeenCalled();
+    // send stub is always called (but registers nothing)
+    expect(registerSendTools).toHaveBeenCalled();
+    // Non-send write tools should NOT be registered
     expect(registerManageTools).not.toHaveBeenCalled();
     expect(registerLabelTools).not.toHaveBeenCalled();
     expect(registerBulkTools).not.toHaveBeenCalled();
-    expect(registerDraftTools).not.toHaveBeenCalled();
     expect(registerFolderTools).not.toHaveBeenCalled();
     expect(registerTemplateWriteTools).not.toHaveBeenCalled();
     expect(registerSchedulerTools).not.toHaveBeenCalled();
