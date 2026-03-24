@@ -12,6 +12,7 @@ import type {
   BulkResult,
   Contact,
   DailyVolume,
+  DraftAttachment,
   Email,
   EmailAddress,
   EmailMeta,
@@ -207,6 +208,114 @@ async function messageToEmail(
     references: headers.references?.split(/\s+/).filter(Boolean),
     attachments: extractAttachments(msg.bodyStructure),
     headers,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Draft MIME helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Format an EmailAddress to an RFC 5322 mailbox string.
+ * e.g. "Alice Smith" <alice@example.com>
+ */
+function formatAddress(addr: { name?: string; address: string }): string {
+  if (addr.name) return `"${addr.name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}" <${addr.address}>`;
+  return addr.address;
+}
+
+interface DraftMimePart {
+  contentType: string;
+  mimeBody: string;
+}
+
+/**
+ * Build the Content-Type header value and MIME body for a draft.
+ *
+ * Supports three content shapes:
+ *   - plain text only
+ *   - html only  (htmlBody, no body)
+ *   - multipart/alternative  (body + htmlBody)
+ *
+ * Each of the above may also be wrapped in multipart/mixed when attachments
+ * are present.
+ */
+function buildDraftMime(options: {
+  body: string;
+  htmlBody?: string;
+  attachments?: DraftAttachment[];
+}): DraftMimePart {
+  const { body, htmlBody, attachments = [] } = options;
+  const hasHtml = !!htmlBody;
+  const hasBody = !!body;
+  const hasFiles = attachments.length > 0;
+  const rnd = () => Math.random().toString(36).slice(2, 10);
+  const ts = Date.now().toString(36);
+
+  // ── Simple plain-text, no attachments ──────────────────────────────────────
+  if (!hasHtml && !hasAttachments) {
+    return { contentType: 'text/plain; charset=utf-8', mimeBody: body };
+  }
+
+  const altBoundary = `alt_${ts}_${rnd()}`;
+  const mixBoundary = `mix_${ts}_${rnd()}`;
+
+  // ── Determine the inline section (text body ± html) ───────────────────────
+  let inlineType: string;
+  let inlineContent: string;
+
+  if (hasHtml && hasBody) {
+    // multipart/alternative: plain text fallback + html preferred
+    inlineType = `multipart/alternative; boundary="${altBoundary}"`;
+    inlineContent = [
+      `--${altBoundary}`,
+      'Content-Type: text/plain; charset=utf-8',
+      '',
+      body,
+      `--${altBoundary}`,
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      htmlBody,
+      `--${altBoundary}--`,
+    ].join('\r\n');
+  } else if (hasHtml) {
+    inlineType = 'text/html; charset=utf-8';
+    inlineContent = htmlBody;
+  } else {
+    inlineType = 'text/plain; charset=utf-8';
+    inlineContent = body;
+  }
+
+  // ── No attachments — return inline section directly ───────────────────────
+  if (!hasFiles) {
+    return { contentType: inlineType, mimeBody: inlineContent };
+  }
+
+  // ── multipart/mixed: inline section + file attachments ───────────────────
+  const attParts = attachments.map((att) => {
+    // Sanitise filename to prevent header injection
+    const safeName = att.filename.replace(/[\r\n"]/g, '_');
+    return [
+      `--${mixBoundary}`,
+      `Content-Type: ${att.mimeType}`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${safeName}"`,
+      '',
+      att.contentBase64,
+    ].join('\r\n');
+  });
+
+  const parts: string[] = [
+    `--${mixBoundary}`,
+    `Content-Type: ${inlineType}`,
+    '',
+    inlineContent,
+    ...attParts,
+    `--${mixBoundary}--`,
+  ];
+  return {
+    contentType: `multipart/mixed; boundary="${mixBoundary}"`,
+    mimeBody: parts.join('\r\n'),
   };
 }
 
@@ -1010,10 +1119,11 @@ export default class ImapService {
       to: string[];
       subject: string;
       body: string;
+      htmlBody?: string;
       cc?: string[];
       bcc?: string[];
-      html?: boolean;
       inReplyTo?: string;
+      attachments?: DraftAttachment[];
     },
   ): Promise<{ id: number; mailbox: string }> {
     const client = await this.connections.getImapClient(accountName);
@@ -1024,9 +1134,18 @@ export default class ImapService {
     const drafts = mailboxes.find((mb) => mb.specialUse === '\\Drafts');
     const draftsPath = drafts?.path ?? 'Drafts';
 
-    // Construct RFC 822 message
+    const { contentType, mimeBody } = buildDraftMime({
+      body: options.body,
+      htmlBody: options.htmlBody,
+      attachments: options.attachments,
+    });
+
+    const fromHeader = account.fullName
+      ? `"${account.fullName}" <${account.email}>`
+      : account.email;
+
     const headers = [
-      `From: ${account.fullName ? `"${account.fullName}" <${account.email}>` : account.email}`,
+      `From: ${fromHeader}`,
       `To: ${options.to.join(', ')}`,
       `Subject: ${options.subject}`,
       `Date: ${new Date().toUTCString()}`,
@@ -1036,11 +1155,105 @@ export default class ImapService {
     if (options.cc?.length) headers.push(`Cc: ${options.cc.join(', ')}`);
     if (options.bcc?.length) headers.push(`Bcc: ${options.bcc.join(', ')}`);
     if (options.inReplyTo) headers.push(`In-Reply-To: ${options.inReplyTo}`);
-
-    const contentType = options.html ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8';
     headers.push(`Content-Type: ${contentType}`);
 
-    const rawMessage = `${headers.join('\r\n')}\r\n\r\n${options.body}`;
+    const rawMessage = `${headers.join('\r\n')}\r\n\r\n${mimeBody}`;
+
+    const appendResult = await client.append(draftsPath, Buffer.from(rawMessage), [
+      '\\Draft',
+      '\\Seen',
+    ]);
+
+    return {
+      id: (appendResult as unknown as { uid?: number }).uid ?? 0,
+      mailbox: draftsPath,
+    };
+  }
+
+  /**
+   * Save a reply draft for a specific email.
+   *
+   * Fetches the original message to build proper threading headers
+   * (In-Reply-To, References) and derives subject / recipients automatically.
+   *
+   * @param replyAll  false → reply to sender only; true → reply to all recipients
+   */
+  async saveDraftReply(
+    accountName: string,
+    emailId: string,
+    mailbox: string,
+    options: {
+      body: string;
+      htmlBody?: string;
+      replyAll: boolean;
+      cc?: string[];
+      bcc?: string[];
+      attachments?: DraftAttachment[];
+    },
+  ): Promise<{ id: number; mailbox: string }> {
+    const original = await this.getEmail(accountName, emailId, mailbox);
+    const account = this.connections.getAccount(accountName);
+
+    // ── Subject ──────────────────────────────────────────────────────────────
+    const subject = /^re:\s*/i.test(original.subject)
+      ? original.subject
+      : `Re: ${original.subject}`;
+
+    // ── Threading headers ────────────────────────────────────────────────────
+    const inReplyTo = original.messageId;
+    const refChain = [...(original.references ?? []), original.messageId].filter(Boolean).join(' ');
+
+    // ── Recipients ───────────────────────────────────────────────────────────
+    const replyToAddr = formatAddress(original.from);
+    const selfEmail = account.email.toLowerCase();
+
+    let draftTo: string[];
+    let draftCc: string[];
+
+    if (options.replyAll) {
+      draftTo = [replyToAddr];
+      // Merge original To + Cc, strip self, deduplicate
+      const others = [...(original.to ?? []), ...(original.cc ?? [])]
+        .filter((a) => a.address.toLowerCase() !== selfEmail)
+        .map(formatAddress);
+      draftCc = [...new Set([...others, ...(options.cc ?? [])])];
+    } else {
+      draftTo = [replyToAddr];
+      draftCc = options.cc ?? [];
+    }
+
+    // ── Build MIME ────────────────────────────────────────────────────────────
+    const { contentType, mimeBody } = buildDraftMime({
+      body: options.body,
+      htmlBody: options.htmlBody,
+      attachments: options.attachments,
+    });
+
+    // ── Find Drafts folder ────────────────────────────────────────────────────
+    const client = await this.connections.getImapClient(accountName);
+    const allMailboxes = await client.list();
+    const draftsFolder = allMailboxes.find((mb) => mb.specialUse === '\\Drafts');
+    const draftsPath = draftsFolder?.path ?? 'Drafts';
+
+    const fromHeader = account.fullName
+      ? `"${account.fullName}" <${account.email}>`
+      : account.email;
+
+    const headers = [
+      `From: ${fromHeader}`,
+      `To: ${draftTo.join(', ')}`,
+      `Subject: ${subject}`,
+      `Date: ${new Date().toUTCString()}`,
+      `MIME-Version: 1.0`,
+    ];
+
+    if (inReplyTo) headers.push(`In-Reply-To: ${inReplyTo}`);
+    if (refChain) headers.push(`References: ${refChain}`);
+    if (draftCc.length) headers.push(`Cc: ${draftCc.join(', ')}`);
+    if (options.bcc?.length) headers.push(`Bcc: ${options.bcc.join(', ')}`);
+    headers.push(`Content-Type: ${contentType}`);
+
+    const rawMessage = `${headers.join('\r\n')}\r\n\r\n${mimeBody}`;
 
     const appendResult = await client.append(draftsPath, Buffer.from(rawMessage), [
       '\\Draft',

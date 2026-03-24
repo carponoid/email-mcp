@@ -183,6 +183,13 @@ export interface AttachmentMeta {
   size: number;
 }
 
+/** An attachment to include when saving a draft. Content must be base64-encoded. */
+export interface DraftAttachment {
+  filename: string;
+  mimeType: string;
+  contentBase64: string;
+}
+
 export interface Email extends EmailMeta {
   cc?: EmailAddress[];
   bcc?: EmailAddress[];

@@ -25,7 +25,7 @@ import registerAttachmentTools from './attachments.tool.js';
 import registerBulkTools from './bulk.tool.js';
 import registerCalendarTools from './calendar.tool.js';
 import registerContactsTools from './contacts.tool.js';
-import registerDraftTools from './drafts.tool.js'; // = registerSaveDraftTool (send_draft removed)
+import registerDraftTools from './drafts.tool.js'; // = save_draft, draft_reply, draft_reply_all (send_draft removed)
 import registerEmailsTools from './emails.tool.js';
 import registerFolderTools from './folders.tool.js';
 import registerHealthTools from './health.tool.js';

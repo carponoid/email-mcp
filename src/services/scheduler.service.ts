@@ -74,9 +74,9 @@ export default class SchedulerService {
       const draftResult = await this.imapService.saveDraft(account, {
         to: options.to,
         subject: `[Scheduled: ${sendAtDate.toLocaleString()}] ${options.subject}`,
-        body: options.body,
+        body: options.html ? '' : options.body,
+        htmlBody: options.html ? options.body : undefined,
         cc: options.cc,
-        html: options.html,
       });
       scheduled.draftMessageId = String(draftResult.id);
       scheduled.draftMailbox = draftResult.mailbox;
