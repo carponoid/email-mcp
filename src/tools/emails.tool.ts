@@ -247,6 +247,15 @@ export default function registerEmailsTools(server: McpServer, imapService: Imap
           );
         }
 
+        if (email.inlineImages && email.inlineImages.length > 0) {
+          parts.push(
+            `🖼️ Inline images (${email.inlineImages.length}): ${email.inlineImages.map((img) => `${img.filename} [cid:${img.cid}] (${img.mimeType}, ${formatSize(img.size)})`).join(', ')}`,
+          );
+          parts.push(
+            '   → Use get_inline_image with the cid value to retrieve and view each image.',
+          );
+        }
+
         parts.push('', '--- Body ---', '');
         parts.push(
           applyBodyFormat(email.bodyText, email.bodyHtml, format as BodyFormat, maxLength),

@@ -183,6 +183,19 @@ export interface AttachmentMeta {
   size: number;
 }
 
+/**
+ * An image embedded inline in an HTML email body (referenced via cid: URI).
+ * Use get_inline_image to fetch the actual image content.
+ */
+export interface InlineImageMeta {
+  /** Content-ID without angle brackets, e.g. "chart001@domain.com" */
+  cid: string;
+  /** Filename from Content-Type name parameter, or derived from CID */
+  filename: string;
+  mimeType: string;
+  size: number;
+}
+
 /** An attachment to include when saving a draft. Content must be base64-encoded. */
 export interface DraftAttachment {
   filename: string;
@@ -199,6 +212,7 @@ export interface Email extends EmailMeta {
   inReplyTo?: string;
   references?: string[];
   attachments: AttachmentMeta[];
+  inlineImages: InlineImageMeta[];
   headers: Record<string, string>;
 }
 

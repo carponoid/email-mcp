@@ -17,6 +17,7 @@ import type {
   EmailAddress,
   EmailMeta,
   EmailStats,
+  InlineImageMeta,
   LabelInfo,
   Mailbox,
   PaginatedResult,
@@ -98,6 +99,75 @@ function findMimePartByFilename(
     for (let i = 0; i < bs.childNodes.length; i++) {
       const childPart = effectivePath ? `${effectivePath}.${i + 1}` : String(i + 1);
       const found = findMimePartByFilename(bs.childNodes[i], targetFilename, childPart);
+      if (found) return found;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Extract inline images from a MIME body structure.
+ * Inline images are image/* parts that are NOT explicit attachments
+ * (disposition !== 'attachment') and carry a Content-ID for cid: references.
+ */
+function extractInlineImages(bodyStructure: unknown): InlineImageMeta[] {
+  const images: InlineImageMeta[] = [];
+  if (!bodyStructure || typeof bodyStructure !== 'object') return images;
+
+  const bs = bodyStructure as Record<string, unknown>;
+
+  // Match image/* parts that aren't explicit file attachments
+  if ((bs.type as string)?.toLowerCase() === 'image' && bs.disposition !== 'attachment') {
+    const rawId = bs.id as string | undefined;
+    if (rawId) {
+      // Content-ID arrives with angle brackets <cid@domain> — strip them
+      const cid = rawId.replace(/^<|>$/g, '');
+      const params = (bs.dispositionParameters ?? bs.parameters ?? {}) as Record<string, string>;
+      images.push({
+        cid,
+        filename: params.filename ?? params.name ?? cid,
+        mimeType: `${(bs.type as string).toLowerCase()}/${(bs.subtype as string | undefined)?.toLowerCase() ?? 'png'}`,
+        size: (bs.size as number) ?? 0,
+      });
+    }
+  }
+
+  if (Array.isArray(bs.childNodes)) {
+    (bs.childNodes as unknown[]).forEach((child) => {
+      images.push(...extractInlineImages(child));
+    });
+  }
+
+  return images;
+}
+
+/**
+ * Find the MIME part number for an inline image by its Content-ID.
+ * CID should be provided without angle brackets.
+ */
+function findMimePartByCid(
+  bodyStructure: unknown,
+  targetCid: string,
+  partPath = '',
+): string | undefined {
+  if (!bodyStructure || typeof bodyStructure !== 'object') return undefined;
+
+  const bs = bodyStructure as Record<string, unknown>;
+  const currentPart = bs.part as string | undefined;
+  const effectivePath = currentPart ?? partPath;
+
+  const rawId = bs.id as string | undefined;
+  if (rawId) {
+    const cid = rawId.replace(/^<|>$/g, '');
+    if (cid === targetCid) return effectivePath;
+  }
+
+  if (Array.isArray(bs.childNodes)) {
+    // eslint-disable-next-line no-plusplus
+    for (let i = 0; i < bs.childNodes.length; i++) {
+      const childPart = effectivePath ? `${effectivePath}.${i + 1}` : String(i + 1);
+      const found = findMimePartByCid(bs.childNodes[i], targetCid, childPart);
       if (found) return found;
     }
   }
@@ -207,6 +277,7 @@ async function messageToEmail(
     inReplyTo: (envelope.inReplyTo as string) ?? undefined,
     references: headers.references?.split(/\s+/).filter(Boolean),
     attachments: extractAttachments(msg.bodyStructure),
+    inlineImages: extractInlineImages(msg.bodyStructure),
     headers,
   };
 }
@@ -1393,6 +1464,89 @@ export default class ImapService {
       return {
         filename: attachment.filename,
         mimeType: attachment.mimeType,
+        size: content.length,
+        contentBase64: content.toString('base64'),
+      };
+    } finally {
+      lock.release();
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Inline image download
+  // -------------------------------------------------------------------------
+
+  /**
+   * Download an inline image from an email by its Content-ID (CID).
+   * CIDs appear in HTML bodies as <img src="cid:XXXX">.
+   * Use get_email to discover available CIDs (inlineImages list), then call this.
+   */
+  async downloadInlineImage(
+    accountName: string,
+    emailId: string,
+    mailbox: string,
+    cid: string,
+    maxSizeBytes = 5 * 1024 * 1024,
+  ): Promise<{
+    cid: string;
+    filename: string;
+    mimeType: string;
+    size: number;
+    contentBase64: string;
+  }> {
+    const client = await this.connections.getImapClient(accountName);
+    const uid = parseInt(emailId, 10);
+
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const msg = await client.fetchOne(
+        String(uid),
+        { uid: true, bodyStructure: true },
+        { uid: true },
+      );
+
+      if (!msg) {
+        throw new Error(`Email ${emailId} not found in ${mailbox}`);
+      }
+
+      const images = extractInlineImages(msg.bodyStructure);
+      const image = images.find((img) => img.cid === cid);
+
+      if (!image) {
+        const available = images.map((img) => img.cid).join(', ') || 'none';
+        throw new Error(`Inline image with CID "${cid}" not found. Available CIDs: ${available}`);
+      }
+
+      if (image.size > maxSizeBytes) {
+        throw new Error(
+          `Inline image "${cid}" is ${Math.round(image.size / 1024 / 1024)}MB, exceeds ${Math.round(maxSizeBytes / 1024 / 1024)}MB limit`,
+        );
+      }
+
+      const partNumber = findMimePartByCid(msg.bodyStructure, cid);
+      if (!partNumber) {
+        throw new Error(`Could not locate MIME part for CID "${cid}"`);
+      }
+
+      const downloadResult = await client.download(String(uid), partNumber, {
+        uid: true,
+      });
+
+      if (!downloadResult?.content) {
+        throw new Error(`Failed to download inline image "${cid}"`);
+      }
+
+      const chunks: Buffer[] = [];
+      // eslint-disable-next-line no-restricted-syntax
+      for await (const chunk of downloadResult.content) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      const content = Buffer.concat(chunks);
+
+      return {
+        cid,
+        filename: image.filename,
+        mimeType: image.mimeType,
         size: content.length,
         contentBase64: content.toString('base64'),
       };
